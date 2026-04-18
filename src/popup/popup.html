@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>HW Analytics</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <h3>HW Analytics</h3>
+
+  <div class="row"><span>Player ID:</span><b id="playerId">—</b></div>
+  <div class="row"><span>В очереди:</span><b id="queueSize">0</b></div>
+  <div class="row"><span>Последний перехват:</span><b id="lastCapture">—</b></div>
+  <div class="row"><span>Последняя отправка:</span><b id="lastSync">—</b></div>
+  <div class="row"><span>Всего отправлено:</span><b id="totalSent">0</b></div>
+  <div class="row"><span>Последний батч ошибок:</span><b id="lastFailed">0</b></div>
+
+  <hr>
+
+  <label>Адрес бэка
+    <input id="backendUrl" type="text" placeholder="http://localhost:9102">
+  </label>
+
+  <div class="buttons">
+    <button id="save">Сохранить</button>
+    <button id="flush">Отправить сейчас</button>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

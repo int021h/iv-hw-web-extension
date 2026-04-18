@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "Hero Wars Alliance — сбор статистики",
+  "description": "Перехватывает RPC-вызовы Hero Wars Alliance и отправляет их в ms-hw для аналитики гильдии.",
+  "version": "0.1.0",
+  "action": {
+    "default_popup": "src/popup/popup.html",
+    "default_title": "HW Analytics"
+  },
+  "background": {
+    "service_worker": "src/background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.hero-wars-alliance.com/*"
+      ],
+      "js": ["src/content.js"],
+      "run_at": "document_start",
+      "all_frames": true
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["src/inject.js"],
+      "matches": ["https://*.hero-wars-alliance.com/*"]
+    }
+  ],
+  "host_permissions": [
+    "https://api.hero-wars-alliance.com/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
+  ],
+  "permissions": ["storage"]
+}
