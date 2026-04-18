@@ -1,4 +1,4 @@
-const DEFAULT_BACKEND = 'http://localhost:9102';
+const DEFAULT_BACKEND = 'https://hw-api.pankov.dev';
 const FLUSH_INTERVAL_MS = 5000;
 const FLUSH_BATCH_SIZE = 30;
 const MAX_QUEUE = 500;
@@ -9,7 +9,8 @@ let flushing = false;
 
 async function getBackendUrl() {
   const { backendUrl } = await chrome.storage.local.get('backendUrl');
-  return (backendUrl && backendUrl.trim()) || DEFAULT_BACKEND;
+  const url = (backendUrl && backendUrl.trim()) || DEFAULT_BACKEND;
+  return url.replace(/\/+$/, '');
 }
 
 async function getStats() {
