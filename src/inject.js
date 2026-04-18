@@ -7,7 +7,8 @@
     'user_getClanInfo',
     'clanClash_getUserClanResult',
     'clanClash_getLaneBattle',
-    'clanClash_getCurrentState'
+    'clanClash_getCurrentState',
+    'clanWarChampDefence_getDefence'
   ]);
 
   const log = (...a) => DEBUG && console.log('[HW-EXT]', ...a);

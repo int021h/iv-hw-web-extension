@@ -3,14 +3,15 @@
 Browser-расширение (Chrome / Edge, Manifest V3) — перехватывает RPC-вызовы Hero Wars Alliance
 и отправляет их в ms-hw для аналитики гильдии.
 
-## MVP-методы
+## Пересылаемые методы
 
-Расширение фильтрует и пересылает только:
+Расширение фильтрует и пересылает только те RPC, которые реально обрабатываются сервисами ms-hw:
 
-- `user_getClanInfo` — player id + гильдия
-- `clanClash_getUserClanResult` — расстановки турнира
-- `clanClash_getLaneBattle` — составы боёв
-- `clanClash_getCurrentState` — наша расстановка до боёв
+- `user_getClanInfo` — player id + гильдия, ростер с ролями
+- `clanClash_getUserClanResult` — расстановки турнира (Столкновение, lvl 2)
+- `clanClash_getLaneBattle` — составы боёв (Столкновение, lvl 3)
+- `clanClash_getCurrentState` — наша расстановка до боёв (Столкновение, lvl 4)
+- `clanWarChampDefence_getDefence` — ростеры игроков в Чемпионате Гильдий (прогресс)
 
 ## Структура
 
