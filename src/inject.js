@@ -1,6 +1,7 @@
 (() => {
   const API_HOST = 'api.hero-wars-alliance.com';
   const API_PATH = '/api/rpc';
+  const DEBUG = true;
 
   const ALLOWED_METHODS = new Set([
     'user_getClanInfo',
@@ -8,6 +9,9 @@
     'clanClash_getLaneBattle',
     'clanClash_getCurrentState'
   ]);
+
+  const log = (...a) => DEBUG && console.log('[HW-EXT]', ...a);
+  const warn = (...a) => console.warn('[HW-EXT]', ...a);
 
   function shouldIntercept(url) {
     if (!url) return false;
@@ -23,13 +27,39 @@
     window.postMessage({ source: 'hw-ext', type: 'rpc-capture', payload }, '*');
   }
 
+  async function readBody(body) {
+    if (body == null) return '';
+    if (typeof body === 'string') return body;
+    try {
+      if (body instanceof Blob) return await body.text();
+      if (body instanceof ArrayBuffer) return new TextDecoder('utf-8').decode(body);
+      if (ArrayBuffer.isView(body)) return new TextDecoder('utf-8').decode(body);
+      if (body instanceof URLSearchParams) return body.toString();
+    } catch (e) {
+      warn('body read failed:', e);
+    }
+    return '';
+  }
+
   function processCapture(requestText, responseText, headers) {
-    let request, response;
-    try { request = JSON.parse(requestText); } catch { return; }
-    try { response = responseText ? JSON.parse(responseText) : null; } catch { response = null; }
+    let request;
+    try {
+      request = JSON.parse(requestText);
+    } catch (e) {
+      warn('request JSON parse failed; body head:', (requestText || '').slice(0, 120));
+      return;
+    }
+    let response = null;
+    try { response = responseText ? JSON.parse(responseText) : null; } catch {}
 
     const calls = request && Array.isArray(request.calls) ? request.calls : null;
-    if (!calls || calls.length === 0) return;
+    if (!calls || calls.length === 0) {
+      log('no calls[] in request, keys:', Object.keys(request || {}));
+      return;
+    }
+
+    const allMethods = calls.map(c => c && c.name).filter(Boolean);
+    log('RPC batch:', allMethods);
 
     const responseMap = {};
     if (response && Array.isArray(response.results)) {
@@ -52,6 +82,8 @@
         requestIdent: c.ident || null,
         calledAt
       }));
+
+    log('matched MVP methods:', filtered.length, '/', calls.length, 'playerId:', playerId);
 
     if (filtered.length > 0) {
       postCaptured({ playerId, calls: filtered });
@@ -82,15 +114,16 @@
     let requestText = '';
     let headers = {};
     try {
-      if (init && init.body != null && typeof init.body === 'string') {
-        requestText = init.body;
+      if (init && init.body != null) {
+        requestText = await readBody(init.body);
       } else if (input instanceof Request) {
         requestText = await input.clone().text();
       }
       const hSrc = (init && init.headers) || (input instanceof Request ? input.headers : null);
       headers = headersToObject(hSrc);
+      log('fetch →', url, 'body bytes:', requestText.length);
     } catch (e) {
-      console.warn('[HW-EXT] request read failed:', e);
+      warn('fetch request read failed:', e);
     }
 
     const response = await origFetch.apply(this, arguments);
@@ -100,7 +133,7 @@
       const respText = await cloned.text();
       processCapture(requestText, respText, headers);
     } catch (e) {
-      console.warn('[HW-EXT] fetch capture failed:', e);
+      warn('fetch capture failed:', e);
     }
 
     return response;
@@ -126,17 +159,18 @@
   XMLHttpRequest.prototype.send = function(body) {
     if (shouldIntercept(this.__hwUrl)) {
       const xhr = this;
-      const requestText = typeof body === 'string' ? body : '';
-      xhr.addEventListener('load', () => {
+      log('xhr →', xhr.__hwUrl, 'body type:', body && body.constructor && body.constructor.name);
+      xhr.addEventListener('load', async () => {
         try {
-          processCapture(requestText, xhr.responseText || '', xhr.__hwHeaders || {});
+          const reqText = await readBody(body);
+          processCapture(reqText, xhr.responseText || '', xhr.__hwHeaders || {});
         } catch (e) {
-          console.warn('[HW-EXT] XHR capture failed:', e);
+          warn('XHR capture failed:', e);
         }
       });
     }
     return origSend.apply(this, arguments);
   };
 
-  console.log('[HW-EXT] fetch/XHR interception installed');
+  log('fetch/XHR interception installed');
 })();
