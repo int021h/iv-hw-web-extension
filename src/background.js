@@ -78,6 +78,100 @@ function scheduleFlush() {
   }, FLUSH_INTERVAL_MS);
 }
 
+/**
+ * При каждом перехваченном user_getClanInfo дёргаем /api/auth/exchange.
+ * Backend апсертит пользователя/гильдию и ставит HttpOnly JWT-куку на .pankov.dev,
+ * после чего web-client на hw.pankov.dev автоматически авторизован.
+ * credentials: 'include' обязательно — иначе браузер не сохранит Set-Cookie в jar.
+ */
+async function authExchange(playerId, clanInfoResponse) {
+  if (!playerId || !clanInfoResponse) return;
+  const base = await getBackendUrl();
+  console.log('[HW-EXT-BG] → POST /exchange', base, 'playerId=', playerId);
+  try {
+    const res = await fetch(`${base}/api/auth/exchange`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        playerId: parseInt(playerId, 10),
+        clanInfoResponse
+      })
+    });
+    if (!res.ok) {
+      console.warn('[HW-EXT-BG] /exchange failed:', res.status);
+      return;
+    }
+    const data = await res.json();
+
+    // В Chrome MV3 fetch из service worker'а пишет Set-Cookie в изолированный partition,
+    // недоступный веб-вкладкам. Поэтому ставим куку явно через chrome.cookies API — так она
+    // попадёт в общий cookie jar и будет отправляться с hw.pankov.dev на hw-api.pankov.dev.
+    if (data.token) {
+      try {
+        const cookie = await chrome.cookies.set({
+          url: `${base}/`,
+          name: 'hw_session',
+          value: data.token,
+          domain: '.pankov.dev',
+          path: '/',
+          httpOnly: true,
+          secure: true,
+          sameSite: 'lax',
+          expirationDate: Math.floor(Date.now() / 1000) + 3600
+        });
+        if (cookie) {
+          console.log('[HW-EXT-BG] cookie установлена:', cookie.domain, cookie.name);
+        } else {
+          console.warn('[HW-EXT-BG] chrome.cookies.set вернул null — проверь host_permissions');
+        }
+      } catch (e) {
+        console.warn('[HW-EXT-BG] не удалось поставить cookie:', e.message);
+      }
+    }
+
+    await patchStats({
+      authName: data.user?.name || null,
+      authGuild: data.user?.guild?.name || null,
+      authRole: data.user?.guildRole || null,
+      authIsOwner: !!data.user?.isOwner,
+      authAt: new Date().toISOString()
+    });
+    console.log('[HW-EXT-BG] auth exchange ok:', data.user?.name, data.user?.guildRole);
+  } catch (e) {
+    console.warn('[HW-EXT-BG] /exchange error:', e.message);
+  }
+}
+
+/**
+ * user_getClanInfo прилетает в login-батче, до того как появится header x-auth-player-id.
+ * Поэтому буферизуем clanInfoResponse в chrome.storage и вызываем /exchange как только
+ * любой следующий батч принесёт playerId.
+ */
+async function tryExchange(payload) {
+  const clanInfoCall = payload.calls.find(c => c.method === 'user_getClanInfo');
+
+  if (clanInfoCall && clanInfoCall.response) {
+    if (payload.playerId) {
+      authExchange(payload.playerId, clanInfoCall.response);
+      await chrome.storage.local.remove('pendingClanInfo');
+      return;
+    }
+    await chrome.storage.local.set({ pendingClanInfo: clanInfoCall.response });
+    console.log('[HW-EXT-BG] user_getClanInfo буферизован (ждём playerId в следующих батчах)');
+    return;
+  }
+
+  if (payload.playerId) {
+    const { pendingClanInfo } = await chrome.storage.local.get('pendingClanInfo');
+    if (pendingClanInfo) {
+      console.log('[HW-EXT-BG] обмен из буфера — playerId появился:', payload.playerId);
+      authExchange(payload.playerId, pendingClanInfo);
+      await chrome.storage.local.remove('pendingClanInfo');
+    }
+  }
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (msg && msg.type === 'rpc-capture') {
     if (queue.length < MAX_QUEUE) {
@@ -88,6 +182,9 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
       playerId: msg.payload.playerId || null,
       queueSize: queue.length
     });
+
+    tryExchange(msg.payload);
+
     if (queue.length >= FLUSH_BATCH_SIZE) {
       flush();
     } else {

@@ -28,7 +28,7 @@
   ],
   "host_permissions": [
     "https://api.hero-wars-alliance.com/*",
-    "https://hw-api.pankov.dev/*"
+    "https://*.pankov.dev/*"
   ],
-  "permissions": ["storage"]
+  "permissions": ["storage", "cookies"]
 }
