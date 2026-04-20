@@ -12,6 +12,10 @@ Browser-расширение (Chrome / Edge, Manifest V3) — перехваты
 - `clanClash_getLaneBattle` — составы боёв (Столкновение, lvl 3)
 - `clanClash_getCurrentState` — наша расстановка до боёв (Столкновение, lvl 4)
 - `clanWarChampDefence_getDefence` — ростеры игроков в Чемпионате Гильдий (прогресс)
+- `clanWarGetInfo` — активная Война Гильдий, её состояние + ростер врага
+- `clanWarGetDayHistory` — все бои конкретного дня войны с replay'ями (составы команд)
+- `clanWarGetAvailableHistory` — список прошедших войн гильдии
+- `clanWarGetDefence` — текущая защитная расстановка гильдии по 40 слотам
 
 ## Структура
 

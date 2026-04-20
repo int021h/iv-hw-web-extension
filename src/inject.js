@@ -8,7 +8,12 @@
     'clanClash_getUserClanResult',
     'clanClash_getLaneBattle',
     'clanClash_getCurrentState',
-    'clanWarChampDefence_getDefence'
+    'clanWarChampDefence_getDefence',
+    // --- GW (Война Гильдий) ---
+    'clanWarGetInfo',
+    'clanWarGetDayHistory',
+    'clanWarGetAvailableHistory',
+    'clanWarGetDefence'
   ]);
 
   const log = (...a) => DEBUG && console.log('[HW-EXT]', ...a);
