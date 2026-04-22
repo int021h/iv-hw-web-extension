@@ -2,10 +2,19 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8">
-  <title>HW Analytics</title>
+  <title>Warden</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
+
+  <!-- Шапка с брендингом -->
+  <header class="brand">
+    <img class="brand-logo" src="../../icons/icon-128.png" alt="Warden">
+    <div class="brand-text">
+      <div class="brand-name">Warden</div>
+      <div class="brand-tagline">аналитика гильдии Hero Wars</div>
+    </div>
+  </header>
 
   <!-- Карточка игрока -->
   <div class="card" id="playerCard">
@@ -38,7 +47,7 @@
   </div>
 
   <div class="footer">
-    <span>HW Analytics · <span id="backend">hw-api.pankov.dev</span></span>
+    <span id="backend">hw-api.pankov.dev</span>
   </div>
 
   <script src="popup.js"></script>

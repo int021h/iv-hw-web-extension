@@ -55,11 +55,11 @@ async function broadcastToastToGameTabs(methods) {
 }
 
 /**
- * Обновляет бейдж на иконке расширения:
- *  - зелёный '✓' когда всё синхронизировано (очередь пуста, никаких недавних ошибок)
+ * Обновляет бейдж на иконке расширения. Бейдж рисуется только когда надо
+ * привлечь внимание — в норме иконка чистая:
  *  - жёлтый N когда в очереди N записей (ждут flush'а)
  *  - красный '!' когда был fail последнего батча
- *  - пусто до первого успешного входа в игру
+ *  - пусто во всех остальных случаях (в т.ч. «всё синхронизировано»)
  */
 function updateBadge(stats) {
   const action = chrome.action;
@@ -73,11 +73,6 @@ function updateBadge(stats) {
   if (stats.queueSize > 0) {
     action.setBadgeText({ text: String(Math.min(stats.queueSize, 99)) });
     action.setBadgeBackgroundColor({ color: '#f59e0b' });
-    return;
-  }
-  if (stats.authName) {
-    action.setBadgeText({ text: '✓' });
-    action.setBadgeBackgroundColor({ color: '#16a34a' });
     return;
   }
   action.setBadgeText({ text: '' });
