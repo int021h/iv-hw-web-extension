@@ -1,33 +1,100 @@
 const $ = (id) => document.getElementById(id);
 
-function fmtTime(iso) {
+const ROLE_LABELS = {
+  MASTER: 'Мастер',
+  GENERAL: 'Генерал',
+  OFFICER: 'Офицер',
+  MEMBER: 'Участник',
+};
+
+function formatAgo(iso) {
   if (!iso) return '—';
-  try { return new Date(iso).toLocaleTimeString(); } catch { return '—'; }
+  const diff = Date.now() - new Date(iso).getTime();
+  if (!Number.isFinite(diff) || diff < 0) return '—';
+  if (diff < 60_000) return `${Math.floor(diff / 1000)} сек назад`;
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} мин назад`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} ч назад`;
+  return `${Math.floor(diff / 86_400_000)} д назад`;
+}
+
+/** Две буквы из имени: "VanDerVill" → "VD", "Вера" → "ВЕ". Для нечитаемых — "?". */
+function initials(name) {
+  if (!name) return '?';
+  const clean = name.trim();
+  if (!clean) return '?';
+  const parts = clean.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  // Один токен — берём первые две буквы
+  return clean.slice(0, 2).toUpperCase();
+}
+
+/**
+ * Вычисляет текущее состояние синхронизации:
+ *  - ok: всё идёт штатно
+ *  - warn: очередь копится И давно не было успешной отправки
+ *  - error: последний батч упал
+ *  - idle: ещё не входил в игру
+ */
+function computeStatus(stats) {
+  if (!stats?.authName) {
+    return { state: 'idle', text: 'Зайди в игру чтобы начать передачу' };
+  }
+
+  if (stats.lastSyncFailed > 0) {
+    return { state: 'error', text: `Ошибка отправки (${stats.lastSyncFailed} звонков не дошло)` };
+  }
+
+  if (stats.queueSize > 0) {
+    // Реально «застряло» только если давно не было успешной отправки. Иначе — просто
+    // батч между flush'ами (FLUSH_INTERVAL = 5 сек).
+    const syncAge = stats.lastSyncAt ? Date.now() - new Date(stats.lastSyncAt).getTime() : Infinity;
+    if (syncAge > 60_000) {
+      return { state: 'warn', text: `Очередь не уходит (${stats.queueSize} записей)` };
+    }
+    return { state: 'ok', text: 'Собираем данные…' };
+  }
+
+  if (stats.lastSyncAt) {
+    return { state: 'ok', text: `Синхронизировано · ${stats.authName}` };
+  }
+
+  return { state: 'idle', text: 'Ожидание данных из игры…' };
 }
 
 async function refresh() {
-  const { stats, backendUrl } = await chrome.storage.local.get(['stats', 'backendUrl']);
+  const { stats } = await chrome.storage.local.get('stats');
   const s = stats || {};
-  $('playerId').textContent = s.playerId || '—';
+
+  // ----- Карточка игрока -----
+  const role = s.authRole || 'UNKNOWN';
+  const name = s.authName || '—';
+
+  $('avatar').dataset.role = role;
+  $('avatar').textContent = s.authName ? initials(s.authName) : '?';
+
+  $('name').textContent = name;
+  $('guild').textContent = s.authGuild || '—';
+
+  $('roleBadge').dataset.role = role;
+  $('roleBadge').textContent = ROLE_LABELS[role] || '—';
+
+  $('ownerBadge').hidden = !s.authIsOwner;
+
+  // ----- Статус -----
+  const status = computeStatus(s);
+  $('status').dataset.state = status.state;
+  $('statusText').textContent = status.text;
+
+  // ----- Статистика -----
   $('queueSize').textContent = s.queueSize || 0;
-  $('lastCapture').textContent = fmtTime(s.lastCaptureAt);
-  $('lastSync').textContent = fmtTime(s.lastSyncAt);
+  $('lastCapture').textContent = formatAgo(s.lastCaptureAt);
+  $('lastSync').textContent = formatAgo(s.lastSyncAt);
   $('totalSent').textContent = s.totalSent || 0;
-  $('lastFailed').textContent = s.lastSyncFailed || 0;
-  if (document.activeElement !== $('backendUrl')) {
-    $('backendUrl').value = backendUrl || '';
-  }
+
+  const failed = s.lastSyncFailed || 0;
+  $('failedRow').hidden = failed === 0;
+  $('lastFailed').textContent = failed;
 }
-
-$('save').onclick = async () => {
-  await chrome.storage.local.set({ backendUrl: $('backendUrl').value.trim() });
-  refresh();
-};
-
-$('flush').onclick = async () => {
-  await chrome.runtime.sendMessage({ type: 'force-flush' });
-  setTimeout(refresh, 300);
-};
 
 refresh();
 setInterval(refresh, 1000);

@@ -1,38 +1,227 @@
+:root {
+  --bg: #f5f7fb;
+  --card: #ffffff;
+  --text: #111827;
+  --muted: #6b7280;
+  --border: #e5e7eb;
+  --primary: #2563eb;
+  --success: #16a34a;
+  --warning: #f59e0b;
+  --danger: #dc2626;
+
+  --role-master: #eab308;   /* gold */
+  --role-general: #a855f7;  /* violet */
+  --role-officer: #3b82f6;  /* blue */
+  --role-member: #6b7280;   /* gray */
+}
+
+* { box-sizing: border-box; }
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  width: 300px;
+  width: 320px;
   margin: 0;
   padding: 12px;
   font-size: 13px;
-  color: #222;
+  color: var(--text);
+  background: var(--bg);
 }
-h3 { margin: 0 0 10px; font-size: 15px; }
-.row {
+
+/* ======= Карточка игрока ======= */
+.card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 10px;
+}
+
+.avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 16px;
+  color: #fff;
+  flex-shrink: 0;
+  letter-spacing: 0.5px;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+}
+.avatar[data-role="MASTER"]  { background: linear-gradient(135deg, #f59e0b, #d97706); }
+.avatar[data-role="GENERAL"] { background: linear-gradient(135deg, #a855f7, #7c3aed); }
+.avatar[data-role="OFFICER"] { background: linear-gradient(135deg, #3b82f6, #2563eb); }
+.avatar[data-role="MEMBER"]  { background: linear-gradient(135deg, #6b7280, #4b5563); }
+.avatar[data-role="UNKNOWN"] { background: #d1d5db; color: #6b7280; }
+
+.info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.name {
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.owner-badge {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.meta-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+  min-width: 0;
+}
+
+.guild {
+  font-weight: 600;
+  color: #374151;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.guild::before {
+  content: '🛡 ';
+  opacity: 0.7;
+}
+
+.role-badge {
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: #fff;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+.role-badge[data-role="MASTER"]  { background: var(--role-master); }
+.role-badge[data-role="GENERAL"] { background: var(--role-general); }
+.role-badge[data-role="OFFICER"] { background: var(--role-officer); }
+.role-badge[data-role="MEMBER"]  { background: var(--role-member); }
+.role-badge[data-role="UNKNOWN"] { background: #d1d5db; color: #6b7280; }
+
+/* ======= Статус ======= */
+.status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 10px;
+  font-size: 12px;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--muted);
+}
+.status[data-state="ok"]     .status-dot { background: var(--success); box-shadow: 0 0 6px var(--success); }
+.status[data-state="warn"]   .status-dot { background: var(--warning); box-shadow: 0 0 6px var(--warning); }
+.status[data-state="error"]  .status-dot { background: var(--danger); box-shadow: 0 0 6px var(--danger); }
+.status[data-state="idle"]   .status-dot { background: var(--muted); }
+.status[data-state="ok"]     .status-text { color: var(--success); font-weight: 600; }
+.status[data-state="warn"]   .status-text { color: var(--warning); font-weight: 600; }
+.status[data-state="error"]  .status-text { color: var(--danger); font-weight: 600; }
+
+/* ======= Статистика ======= */
+.stats {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 10px;
+  margin-bottom: 10px;
+}
+
+.stat {
   display: flex;
   justify-content: space-between;
-  padding: 3px 0;
-}
-.row b { color: #0b4a8f; font-weight: 600; }
-hr { border: 0; border-top: 1px solid #eee; margin: 10px 0; }
-label { display: block; margin: 6px 0; color: #555; }
-input {
-  display: block;
-  width: 100%;
-  padding: 5px 7px;
-  margin-top: 3px;
-  box-sizing: border-box;
-  border: 1px solid #ccc;
-  border-radius: 3px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border);
   font-size: 12px;
 }
-.buttons { display: flex; gap: 6px; margin-top: 8px; }
+.stat:last-child { border-bottom: none; }
+.stat span { color: var(--muted); }
+.stat b {
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-error b { color: var(--danger); }
+
+/* ======= Кнопки ======= */
+.buttons { display: flex; gap: 6px; }
+
 button {
   flex: 1;
-  padding: 6px 10px;
-  border: 1px solid #aac;
-  background: #f4f7fb;
-  border-radius: 3px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+  border-radius: 6px;
   cursor: pointer;
   font-size: 12px;
+  font-weight: 600;
+  transition: all 0.15s;
 }
-button:hover { background: #e8eef6; }
+button:hover { background: #f3f4f6; border-color: #d1d5db; }
+button:active { transform: translateY(1px); }
+
+.btn-primary {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+.btn-primary:hover { background: #1d4ed8; border-color: #1d4ed8; }
+
+/* ======= Футер ======= */
+.footer {
+  margin-top: 10px;
+  text-align: center;
+  font-size: 10px;
+  color: var(--muted);
+  opacity: 0.7;
+}
+.footer span { font-family: ui-monospace, "SF Mono", Consolas, monospace; }
+
+/* Dark mode */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f172a;
+    --card: #1e293b;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --border: #334155;
+  }
+  .guild { color: #cbd5e1; }
+  button:hover { background: #334155; border-color: #475569; }
+}

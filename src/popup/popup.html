@@ -6,24 +6,39 @@
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <h3>HW Analytics</h3>
 
-  <div class="row"><span>Player ID:</span><b id="playerId">—</b></div>
-  <div class="row"><span>В очереди:</span><b id="queueSize">0</b></div>
-  <div class="row"><span>Последний перехват:</span><b id="lastCapture">—</b></div>
-  <div class="row"><span>Последняя отправка:</span><b id="lastSync">—</b></div>
-  <div class="row"><span>Всего отправлено:</span><b id="totalSent">0</b></div>
-  <div class="row"><span>Последний батч ошибок:</span><b id="lastFailed">0</b></div>
+  <!-- Карточка игрока -->
+  <div class="card" id="playerCard">
+    <div class="avatar" id="avatar" data-role="MEMBER">?</div>
+    <div class="info">
+      <div class="name-row">
+        <span class="name" id="name">—</span>
+        <span class="owner-badge" id="ownerBadge" hidden>👑</span>
+      </div>
+      <div class="meta-row">
+        <span class="guild" id="guild">—</span>
+        <span class="role-badge" id="roleBadge" data-role="MEMBER">—</span>
+      </div>
+    </div>
+  </div>
 
-  <hr>
+  <!-- Статус подключения -->
+  <div class="status" id="status" data-state="idle">
+    <span class="status-dot"></span>
+    <span class="status-text" id="statusText">Ожидание данных из игры…</span>
+  </div>
 
-  <label>Адрес бэка
-    <input id="backendUrl" type="text" placeholder="https://hw-api.pankov.dev">
-  </label>
+  <!-- Краткая статистика -->
+  <div class="stats">
+    <div class="stat"><span>В очереди</span><b id="queueSize">0</b></div>
+    <div class="stat"><span>Последний ивент</span><b id="lastCapture">—</b></div>
+    <div class="stat"><span>Последняя отправка</span><b id="lastSync">—</b></div>
+    <div class="stat"><span>Всего отправлено</span><b id="totalSent">0</b></div>
+    <div class="stat stat-error" id="failedRow" hidden><span>Ошибок в последнем батче</span><b id="lastFailed">0</b></div>
+  </div>
 
-  <div class="buttons">
-    <button id="save">Сохранить</button>
-    <button id="flush">Отправить сейчас</button>
+  <div class="footer">
+    <span>HW Analytics · <span id="backend">hw-api.pankov.dev</span></span>
   </div>
 
   <script src="popup.js"></script>
