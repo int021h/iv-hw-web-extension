@@ -1,5 +1,5 @@
 // Хардкод: адрес бэка — не настраивается пользователем. Чтобы сменить — bump версию расширения и пересобрать.
-const BACKEND_URL = 'https://hw-api.pankov.dev';
+const BACKEND_URL = 'https://warden-api.pankov.dev';
 const FLUSH_INTERVAL_MS = 5000;
 const FLUSH_BATCH_SIZE = 30;
 const MAX_QUEUE = 500;
@@ -170,7 +170,7 @@ async function authExchange(playerId, clanInfoResponse) {
 
     // В Chrome MV3 fetch из service worker'а пишет Set-Cookie в изолированный partition,
     // недоступный веб-вкладкам. Поэтому ставим куку явно через chrome.cookies API — так она
-    // попадёт в общий cookie jar и будет отправляться с hw.pankov.dev на hw-api.pankov.dev.
+    // попадёт в общий cookie jar и будет отправляться с warden.pankov.dev на warden-api.pankov.dev.
     if (data.token) {
       try {
         const cookie = await chrome.cookies.set({
