@@ -13,7 +13,11 @@
     'clanWarGetInfo',
     'clanWarGetDayHistory',
     'clanWarGetAvailableHistory',
-    'clanWarGetDefence'
+    'clanWarGetDefence',
+    // --- GW current-day: назначения и бои ---
+    'clanWar_SetTargetMark',
+    'clanWarAttack',
+    'clanWarEndBattle'
   ]);
 
   const log = (...a) => DEBUG && console.log('[HW-EXT]', ...a);

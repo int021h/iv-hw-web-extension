@@ -36,6 +36,9 @@
     'clanWarGetDayHistory':           'Война: история дня',
     'clanWarGetAvailableHistory':     'Война: список войн',
     'clanWarGetDefence':              'Война: наша защита',
+    'clanWar_SetTargetMark':          'Война: назначение на цель',
+    'clanWarAttack':                  'Война: старт атаки',
+    'clanWarEndBattle':               'Война: результат боя',
   };
 
   const labelFor = (method) => METHOD_LABELS[method] || method;
