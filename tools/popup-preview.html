@@ -1,0 +1,122 @@
+<!--
+    Standalone-превью popup'а с фейковыми данными — для скриншотов перед публикацией.
+    НЕ включается в дистрибутив (build.ps1 кладёт в zip только manifest/src/icons).
+
+    Открывай через file:// прямо в Chrome: двойной клик по этому файлу.
+    Чтобы поменять данные — правь объект MOCK_STATS в <script> внизу, обнови страницу.
+-->
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <title>Warden — popup preview</title>
+    <link rel="stylesheet" href="../src/popup/popup.css">
+    <style>
+        /*
+            popup.css задаёт body.width=320 — но мы в standalone preview, body это
+            вся страница. Оборачиваем всё в .frame (те же 320px), а body центрирует
+            его на тёмном фоне, чтобы визуально было видно границы popup'а
+            при скриншоте.
+        */
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background: #2a2d33;
+        }
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            padding: 40px 0;
+            min-height: 100vh;
+            box-sizing: border-box;
+        }
+        .frame {
+            width: 320px;
+            padding: 12px;
+            background: var(--bg);
+            color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            font-size: 13px;
+            border-radius: 12px;
+            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+        }
+    </style>
+</head>
+<body>
+
+<div class="frame">
+    <!-- Абсолютная копия popup.html внутри ограниченной рамки -->
+    <header class="brand">
+        <img class="brand-logo" src="../icons/icon-128.png" alt="Warden">
+        <div class="brand-text">
+            <div class="brand-name">Warden</div>
+            <div class="brand-tagline">аналитика HW Alliance</div>
+        </div>
+    </header>
+
+    <div class="card" id="playerCard">
+        <div class="avatar" id="avatar" data-role="MEMBER">?</div>
+        <div class="info">
+            <div class="name-row">
+                <span class="name" id="name">—</span>
+                <span class="owner-badge" id="ownerBadge" hidden>👑</span>
+            </div>
+            <div class="meta-row">
+                <span class="guild" id="guild">—</span>
+                <span class="role-badge" id="roleBadge" data-role="MEMBER">—</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="status" id="status" data-state="idle">
+        <span class="status-dot"></span>
+        <span class="status-text" id="statusText">Ожидание данных из игры…</span>
+    </div>
+
+    <div class="stats">
+        <div class="stat"><span>В очереди</span><b id="queueSize">0</b></div>
+        <div class="stat"><span>Последний ивент</span><b id="lastCapture">—</b></div>
+        <div class="stat"><span>Последняя отправка</span><b id="lastSync">—</b></div>
+        <div class="stat"><span>Всего отправлено</span><b id="totalSent">0</b></div>
+        <div class="stat stat-error" id="failedRow" hidden><span>Ошибок в последнем батче</span><b id="lastFailed">0</b></div>
+    </div>
+
+    <div class="footer">
+        <span id="backend">warden-api.pankov.dev</span>
+    </div>
+</div>
+
+<!--
+    Мок chrome.storage.local — подменяет настоящий Chrome API до загрузки popup.js.
+    popup.js дергает chrome.storage.local.get('stats') и заполняет DOM — значит
+    превью соответствует тому что пользователь видит в бою, 1:1.
+-->
+<script>
+    const MOCK_STATS = {
+        authName: 'Player',
+        authGuild: 'My Guild',
+        authRole: 'MASTER',
+        authIsOwner: true,
+
+        queueSize: 0,
+        totalSent: 142,
+        lastCaptureAt: new Date(Date.now() - 28_000).toISOString(),   // 28 сек назад
+        lastSyncAt: new Date(Date.now() - 12_000).toISOString(),      // 12 сек назад
+        lastSyncFailed: 0,
+    };
+
+    window.chrome = {
+        storage: {
+            local: {
+                get: async (_key) => ({ stats: MOCK_STATS }),
+            },
+        },
+    };
+</script>
+<script src="../src/popup/popup.js"></script>
+
+</body>
+</html>

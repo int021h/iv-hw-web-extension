@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Warden — аналитика гильдии Hero Wars",
-  "description": "Перехватывает RPC-вызовы Hero Wars Alliance и отправляет их в Warden для аналитики гильдии.",
-  "version": "0.1.1",
+  "name": "Warden — перехватчик RPC для аналитики HW Alliance",
+  "description": "Перехватывает игровые RPC-вызовы и пересылает их в Warden для аналитики HW Alliance. Неофициальное расширение.",
+  "version": "1.0.0",
   "icons": {
     "16": "icons/icon-16.png",
     "48": "icons/icon-48.png",
@@ -40,5 +40,5 @@
     "https://*.hero-wars-alliance.com/*",
     "https://*.pankov.dev/*"
   ],
-  "permissions": ["storage", "cookies", "notifications"]
+  "permissions": ["storage", "cookies"]
 }
