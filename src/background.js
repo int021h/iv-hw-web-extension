@@ -1,5 +1,39 @@
-// Хардкод: адрес бэка — не настраивается пользователем. Чтобы сменить — bump версию расширения и пересобрать.
-const BACKEND_URL = 'https://warden-api.pankov.dev';
+// Конфиг автоматически переключается между prod и dev в зависимости от
+// способа установки расширения:
+//   - "Load unpacked" из исходников   → installType === 'development' → fan-out: localhost + prod
+//   - установка из Chrome Web Store   → installType === 'normal'      → только prod
+// chrome.management.getSelf() — единственный метод management-namespace,
+// который НЕ требует permission "management" в манифесте (самоинтроспекция).
+//
+// В DEV расширение шлёт каждый перехваченный батч (HAR ingest и auth-exchange) в ОБА бэка
+// параллельно. Куки ставятся для каждого target'а в свой домен — конфликта нет, разные scope:
+// `localhost` cookie шлётся только на localhost-fetch'и, `.pankov.dev` cookie только на prod.
+// Это позволяет одной игровой сессии «прокармливать» и локалку (для тестирования), и прод
+// (чтобы реальные уведомления/обновления не страдали).
+const PROD_TARGET = {
+    url: 'https://warden-api.pankov.dev',
+    cookieDomain: '.pankov.dev',
+    cookieSecure: true,
+};
+const LOCAL_TARGET = {
+    url: 'http://localhost:9102',
+    cookieDomain: 'localhost',
+    cookieSecure: false,
+};
+let configPromise = null;
+function getConfig() {
+    if (configPromise === null) {
+        configPromise = (async () => {
+            const info = await chrome.management.getSelf();
+            const isDev = info.installType === 'development';
+            const targets = isDev ? [LOCAL_TARGET, PROD_TARGET] : [PROD_TARGET];
+            console.log('[HW-EXT-BG] mode:', isDev ? 'DEV' : 'PROD', '→ targets:', targets.map(t => t.url).join(', '));
+            return { isDev, targets };
+        })();
+    }
+    return configPromise;
+}
+
 const FLUSH_INTERVAL_MS = 5000;
 const FLUSH_BATCH_SIZE = 30;
 const MAX_QUEUE = 500;
@@ -13,16 +47,13 @@ let flushing = false;
 // иначе popup и бейдж показывают стейл-значение от прошлой жизни SW.
 (async () => {
   try {
+    await getConfig();  // прогрев — лог режима в консоли SW сразу при старте
     const { stats } = await chrome.storage.local.get('stats');
     const fresh = { ...(stats || {}), queueSize: 0 };
     await chrome.storage.local.set({ stats: fresh });
     updateBadge(fresh);
   } catch { /* ignore */ }
 })();
-
-function getBackendUrl() {
-  return BACKEND_URL.replace(/\/+$/, '');
-}
 
 async function getStats() {
   const { stats } = await chrome.storage.local.get('stats');
@@ -83,7 +114,7 @@ async function flush() {
   flushing = true;
   try {
     const batch = queue.splice(0, queue.length);
-    const base = getBackendUrl();
+    const cfg = await getConfig();
 
     const byPlayer = new Map();
     for (const item of batch) {
@@ -96,18 +127,29 @@ async function flush() {
     let failed = 0;
     const sentMethods = [];
     for (const [playerId, calls] of byPlayer) {
-      try {
-        const res = await fetch(`${base}/api/hw/har/ingest`, {
+      // Шлём в каждый target параллельно. Считаем batch принятым если хотя бы один target ответил OK
+      // (если localhost не запущен, но прод доступен — данные не теряются, реальная работа продолжается).
+      const results = await Promise.allSettled(cfg.targets.map(async (t) => {
+        const res = await fetch(`${t.url}/api/hw/har/ingest`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ playerId, calls })
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      }));
+
+      results.forEach((r, i) => {
+        if (r.status === 'rejected') {
+          console.warn('[HW-EXT-BG] ingest failed:', cfg.targets[i].url, '→', r.reason.message);
+        }
+      });
+
+      const anyOk = results.some(r => r.status === 'fulfilled');
+      if (anyOk) {
         sent += calls.length;
         for (const c of calls) if (c?.method) sentMethods.push(c.method);
-      } catch (e) {
+      } else {
         failed += calls.length;
-        console.warn('[HW-EXT-BG] flush failed:', e.message);
         if (queue.length + calls.length <= MAX_QUEUE) {
           queue.push({ playerId, calls });
         }
@@ -150,10 +192,15 @@ function scheduleFlush() {
  */
 async function authExchange(playerId, clanInfoResponse) {
   if (!playerId || !clanInfoResponse) return;
-  const base = getBackendUrl();
-  console.log('[HW-EXT-BG] → POST /exchange', base, 'playerId=', playerId);
-  try {
-    const res = await fetch(`${base}/api/auth/exchange`, {
+  const cfg = await getConfig();
+  console.log('[HW-EXT-BG] → POST /exchange playerId=', playerId, 'targets=', cfg.targets.map(t => t.url).join(', '));
+
+  // В Chrome MV3 fetch из service worker'а пишет Set-Cookie в изолированный partition,
+  // недоступный веб-вкладкам. Поэтому ставим куку явно через chrome.cookies API — так она
+  // попадёт в общий cookie jar браузера и будет отправляться при кросс-фетчах с web-страниц.
+  // Каждый target → своя кука в свой scope (`localhost` vs `.pankov.dev`), не конфликтуют.
+  const results = await Promise.allSettled(cfg.targets.map(async (target) => {
+    const res = await fetch(`${target.url}/api/auth/exchange`, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
@@ -162,40 +209,41 @@ async function authExchange(playerId, clanInfoResponse) {
         clanInfoResponse
       })
     });
-    if (!res.ok) {
-      console.warn('[HW-EXT-BG] /exchange failed:', res.status);
-      return;
-    }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
 
-    // В Chrome MV3 fetch из service worker'а пишет Set-Cookie в изолированный partition,
-    // недоступный веб-вкладкам. Поэтому ставим куку явно через chrome.cookies API — так она
-    // попадёт в общий cookie jar и будет отправляться с warden.pankov.dev на warden-api.pankov.dev.
     if (data.token) {
-      try {
-        const cookie = await chrome.cookies.set({
-          url: `${base}/`,
-          name: 'hw_session',
-          value: data.token,
-          domain: '.pankov.dev',
-          path: '/',
-          httpOnly: true,
-          secure: true,
-          sameSite: 'lax',
-          expirationDate: Math.floor(Date.now() / 1000) + 3600
-        });
-        if (cookie) {
-          console.log('[HW-EXT-BG] cookie установлена:', cookie.domain, cookie.name);
-        } else {
-          console.warn('[HW-EXT-BG] chrome.cookies.set вернул null — проверь host_permissions');
-        }
-      } catch (e) {
-        console.warn('[HW-EXT-BG] не удалось поставить cookie:', e.message);
+      const cookie = await chrome.cookies.set({
+        url: `${target.url}/`,
+        name: 'hw_session',
+        value: data.token,
+        domain: target.cookieDomain,
+        path: '/',
+        httpOnly: true,
+        secure: target.cookieSecure,
+        sameSite: 'lax',
+        expirationDate: Math.floor(Date.now() / 1000) + 3600
+      });
+      if (cookie) {
+        console.log('[HW-EXT-BG] cookie установлена:', cookie.domain, '←', target.url);
+      } else {
+        console.warn('[HW-EXT-BG] chrome.cookies.set вернул null:', target.url, '— проверь host_permissions');
       }
     }
+    return data;
+  }));
 
-    // Дополнительно тащим game-данные о себе из исходного ответа clanInfoResponse
-    // (бэк их не возвращает, но они есть в members[playerId]).
+  results.forEach((r, i) => {
+    if (r.status === 'rejected') {
+      console.warn('[HW-EXT-BG] /exchange failed:', cfg.targets[i].url, '→', r.reason.message);
+    }
+  });
+
+  // patchStats — один раз из первого успешного target'а. Данные пользователя у обоих идентичны
+  // (одинаковый playerId, один clanInfoResponse), отличается только токен/cookie scope.
+  const firstOk = results.find(r => r.status === 'fulfilled');
+  if (firstOk) {
+    const data = firstOk.value;
     const pidStr = String(playerId);
     const myMember = clanInfoResponse?.clanData?.clan?.members?.[pidStr] || null;
     const clanIcon = clanInfoResponse?.clanData?.clan?.icon || null;
@@ -212,8 +260,6 @@ async function authExchange(playerId, clanInfoResponse) {
       authAt: new Date().toISOString()
     });
     console.log('[HW-EXT-BG] auth exchange ok:', data.user?.name, data.user?.guildRole);
-  } catch (e) {
-    console.warn('[HW-EXT-BG] /exchange error:', e.message);
   }
 }
 

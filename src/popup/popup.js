@@ -96,5 +96,21 @@ async function refresh() {
   $('lastFailed').textContent = failed;
 }
 
+async function showBackend() {
+  try {
+    const info = await chrome.management.getSelf();
+    const isDev = info.installType === 'development';
+    $('backend').textContent = isDev
+      ? 'localhost + warden-api.pankov.dev (DEV)'
+      : 'warden-api.pankov.dev';
+  } catch { /* ignore */ }
+}
+
+function showVersion() {
+  $('version').textContent = `v${chrome.runtime.getManifest().version}`;
+}
+
+showVersion();
+showBackend();
 refresh();
 setInterval(refresh, 1000);
