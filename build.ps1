@@ -55,14 +55,26 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 $zip = [System.IO.Compression.ZipFile]::Open($zipPath, 'Create')
 try {
     # manifest.json в корне архива — без `http://localhost/*` в host_permissions
+    # И без localhost-матчей в content_scripts (нужны только для DEV Load unpacked,
+    # в prod-копии лишний broad-match привлекает внимание ревьюеров CWS).
     $prodManifest = Get-Content $manifestPath -Raw -Encoding utf8 | ConvertFrom-Json
     $kept     = @($prodManifest.host_permissions | Where-Object { $_ -notmatch '^http://localhost' })
     $stripped = @($prodManifest.host_permissions | Where-Object { $_ -match '^http://localhost' })
     $prodManifest.host_permissions = $kept
-    $prodManifestJson = $prodManifest | ConvertTo-Json -Depth 10
     if ($stripped.Count -gt 0) {
         Write-Host "  убрано из host_permissions для prod-сборки: $($stripped -join ', ')" -ForegroundColor DarkGray
     }
+
+    foreach ($cs in $prodManifest.content_scripts) {
+        $csKept     = @($cs.matches | Where-Object { $_ -notmatch '^http://localhost' })
+        $csStripped = @($cs.matches | Where-Object { $_ -match '^http://localhost' })
+        $cs.matches = $csKept
+        if ($csStripped.Count -gt 0) {
+            Write-Host "  убрано из content_scripts.matches для prod-сборки: $($csStripped -join ', ')" -ForegroundColor DarkGray
+        }
+    }
+
+    $prodManifestJson = $prodManifest | ConvertTo-Json -Depth 10
 
     $manifestEntry = $zip.CreateEntry('manifest.json', 'Optimal')
     $manifestStream = $manifestEntry.Open()

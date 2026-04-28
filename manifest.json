@@ -28,6 +28,14 @@
       "js": ["src/content.js"],
       "run_at": "document_start",
       "all_frames": true
+    },
+    {
+      "matches": [
+        "https://warden.pankov.dev/*",
+        "http://localhost:3000/*"
+      ],
+      "js": ["src/marker.js"],
+      "run_at": "document_start"
     }
   ],
   "web_accessible_resources": [
