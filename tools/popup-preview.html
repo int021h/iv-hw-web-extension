@@ -84,15 +84,23 @@
         <div class="stat stat-error" id="failedRow" hidden><span>Ошибок в последнем батче</span><b id="lastFailed">0</b></div>
     </div>
 
+    <a class="warden-link" id="wardenLink" target="_blank" rel="noopener noreferrer">
+        Открыть Warden →
+    </a>
+
     <div class="footer">
         <span id="backend">warden-api.pankov.dev</span>
     </div>
 </div>
 
 <!--
-    Мок chrome.storage.local — подменяет настоящий Chrome API до загрузки popup.js.
-    popup.js дергает chrome.storage.local.get('stats') и заполняет DOM — значит
-    превью соответствует тому что пользователь видит в бою, 1:1.
+    Моки Chrome API — подменяются до загрузки popup.js, чтобы превью отрабатывало
+    на реальном popup.js без правок (1:1 с тем, что видит пользователь в бою).
+
+    Версию тянем из настоящего manifest.json чтобы не дублировать строку с версией.
+    При открытии через file:// Chrome блокирует fetch на соседние file://-ресурсы —
+    тогда fallback с '?'. Чтобы увидеть настоящую версию, открой превью через
+    локальный http-сервер (например `npx http-server` из корня репо).
 -->
 <script>
     const MOCK_STATS = {
@@ -108,15 +116,32 @@
         lastSyncFailed: 0,
     };
 
-    window.chrome = {
-        storage: {
-            local: {
-                get: async (_key) => ({ stats: MOCK_STATS }),
+    (async () => {
+        let manifest = { version: '?' };
+        try {
+            manifest = await (await fetch('../manifest.json')).json();
+        } catch { /* file:// CORS — оставляем fallback */ }
+
+        window.chrome = {
+            storage: {
+                local: {
+                    get: async (_key) => ({ stats: MOCK_STATS }),
+                },
             },
-        },
-    };
+            management: {
+                getSelf: async () => ({ installType: 'normal' }),
+            },
+            runtime: {
+                getManifest: () => manifest,
+            },
+        };
+
+        // popup.js грузим динамически — только после того как window.chrome готов
+        const s = document.createElement('script');
+        s.src = '../src/popup/popup.js';
+        document.body.appendChild(s);
+    })();
 </script>
-<script src="../src/popup/popup.js"></script>
 
 </body>
 </html>

@@ -1,5 +1,8 @@
 const $ = (id) => document.getElementById(id);
 
+const WARDEN_URL_PROD = 'https://warden.pankov.dev';
+const WARDEN_URL_DEV = 'http://localhost:3000';
+
 const ROLE_LABELS = {
   MASTER: 'Мастер',
   GENERAL: 'Генерал',
@@ -97,13 +100,15 @@ async function refresh() {
 }
 
 async function showBackend() {
+  let isDev = false;
   try {
     const info = await chrome.management.getSelf();
-    const isDev = info.installType === 'development';
-    $('backend').textContent = isDev
-      ? 'localhost + warden-api.pankov.dev (DEV)'
-      : 'warden-api.pankov.dev';
-  } catch { /* ignore */ }
+    isDev = info.installType === 'development';
+  } catch { /* ignore — оставляем PROD по умолчанию */ }
+  $('backend').textContent = isDev
+    ? 'localhost + warden-api.pankov.dev (DEV)'
+    : 'warden-api.pankov.dev';
+  $('wardenLink').href = isDev ? WARDEN_URL_DEV : WARDEN_URL_PROD;
 }
 
 function showVersion() {

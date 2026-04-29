@@ -257,6 +257,23 @@ button:active { transform: translateY(1px); }
 }
 .btn-primary:hover { background: #1d4ed8; border-color: #1d4ed8; }
 
+/* ======= Ссылка на Warden ======= */
+.warden-link {
+  display: block;
+  text-align: center;
+  padding: 9px 12px;
+  margin-bottom: 10px;
+  background: var(--primary);
+  color: #fff;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.15s;
+}
+.warden-link:hover { background: #1d4ed8; }
+.warden-link:active { transform: translateY(1px); }
+
 /* ======= Футер ======= */
 .footer {
   margin-top: 10px;
