@@ -17,7 +17,12 @@
     // --- GW current-day: назначения и бои ---
     'clanWar_SetTargetMark',
     'clanWarAttack',
-    'clanWarEndBattle'
+    'clanWarEndBattle',
+    // --- Player-scope: инвентарь и прогресс героев (для журнала-планировщика) ---
+    'inventoryGet',
+    'heroGetAll',
+    'titanGetAll',
+    'userGetInfo'
   ]);
 
   const log = (...a) => DEBUG && console.log('[HW-EXT]', ...a);

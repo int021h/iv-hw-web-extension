@@ -39,6 +39,10 @@
     'clanWar_SetTargetMark':          'Война: назначение на цель',
     'clanWarAttack':                  'Война: старт атаки',
     'clanWarEndBattle':               'Война: результат боя',
+    'inventoryGet':                   'Инвентарь игрока',
+    'heroGetAll':                     'Прогресс героев',
+    'titanGetAll':                    'Прогресс титанов',
+    'userGetInfo':                    'Профиль игрока',
   };
 
   const labelFor = (method) => METHOD_LABELS[method] || method;
