@@ -47,11 +47,16 @@ let flushing = false;
 // иначе popup и бейдж показывают стейл-значение от прошлой жизни SW.
 (async () => {
   try {
-    await getConfig();  // прогрев — лог режима в консоли SW сразу при старте
+    const cfg = await getConfig();  // прогрев — лог режима в консоли SW сразу при старте
     const { stats } = await chrome.storage.local.get('stats');
     const fresh = { ...(stats || {}), queueSize: 0 };
     await chrome.storage.local.set({ stats: fresh });
     updateBadge(fresh);
+
+    // CDN-icon collector — DEV-only. В prod-сборку host_permission и `webRequest`
+    // permission вырезается build.ps1, поэтому регистрировать listener бессмысленно
+    // (а попытка вызвать chrome.webRequest без разрешения тихо падает).
+    if (cfg.isDev) initAssetUrlCollector(cfg);
   } catch { /* ignore */ }
 })();
 
@@ -290,6 +295,79 @@ async function tryExchange(payload) {
       await chrome.storage.local.remove('pendingClanInfo');
     }
   }
+}
+
+// ============================================================
+// CDN asset collector (DEV-only)
+// ============================================================
+// Игра тащит с CDN кучу `.img` (иконки предметов, аватары героев, флаги, фоны и т.п.)
+// по шаблону:
+//   https://heroesmobile-a-cdn.nextersglobal.com/v/webgl/<version>/v0001/extends/<path>.img
+// Подписываемся на webRequest, вырезаем каноничный `<path>` (всё после `/extends/`
+// без `.img`) и батчами шлём на ms-hw → upsert в hw.game_asset. Сервер потом сам
+// решает какие пути декодировать в PNG (по запросу из UI) — здесь только реестр.
+//
+// Только DEV: в prod-сборке для Chrome Web Store webRequest и host CDN вырезаются
+// build.ps1, и эта функция вообще не вызывается (см. инициализацию выше).
+// Никакой kind/gid классификации тут — фронт сам строит assetPath из доменных
+// (kind, gameId), а реестр нужен бэку только чтобы знать какие URL он видел.
+
+const ASSET_PATH_RE = /\/extends\/(.+?)\.img(?:\?|$)/;
+
+const ASSET_FLUSH_MS = 10000;
+const ASSET_BATCH_SIZE = 50;
+const ASSET_MAX_QUEUE = 500;
+
+const assetSeen = new Set(); // assetPath, дедуп в рамках жизни SW
+let assetQueue = [];
+let assetTimer = null;
+
+function initAssetUrlCollector(cfg) {
+    if (!chrome.webRequest || !chrome.webRequest.onBeforeRequest) {
+        console.warn('[HW-EXT-BG] webRequest API недоступен, asset collector выключен');
+        return;
+    }
+    chrome.webRequest.onBeforeRequest.addListener(
+        (details) => {
+            const url = details.url;
+            const m = ASSET_PATH_RE.exec(url);
+            if (!m) return;
+            const assetPath = m[1];
+            // Дедуп по path в рамках жизни SW: версия CDN может меняться, но path стабилен.
+            if (assetSeen.has(assetPath)) return;
+            assetSeen.add(assetPath);
+            if (assetQueue.length < ASSET_MAX_QUEUE) {
+                assetQueue.push({ assetPath, assetUrl: url });
+            }
+            if (assetQueue.length >= ASSET_BATCH_SIZE) {
+                flushAssetQueue(cfg);
+            } else {
+                scheduleAssetFlush(cfg);
+            }
+        },
+        { urls: ['*://heroesmobile-a-cdn.nextersglobal.com/*/extends/*.img*'] }
+    );
+    console.log('[HW-EXT-BG] DEV asset collector активирован');
+}
+
+function scheduleAssetFlush(cfg) {
+    if (assetTimer) return;
+    assetTimer = setTimeout(() => { assetTimer = null; flushAssetQueue(cfg); }, ASSET_FLUSH_MS);
+}
+
+async function flushAssetQueue(cfg) {
+    if (assetQueue.length === 0) return;
+    const batch = assetQueue.splice(0, assetQueue.length);
+    // Шлём в каждый target параллельно, успех = хотя бы один OK. Endpoint PUBLIC,
+    // но валидируется на сервере (allowed prefixes, лимиты) — мусор отбрасывается молча.
+    await Promise.allSettled(cfg.targets.map(async (t) => {
+        const res = await fetch(`${t.url}/api/hw/asset/seen`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ items: batch })
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    }));
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {

@@ -57,12 +57,24 @@ try {
     # manifest.json в корне архива — без `http://localhost/*` в host_permissions
     # И без localhost-матчей в content_scripts (нужны только для DEV Load unpacked,
     # в prod-копии лишний broad-match привлекает внимание ревьюеров CWS).
+    # Также вырезаем DEV-only фичи: CDN asset collector (heroesmobile-a-cdn host + webRequest
+    # permission) — он живёт только в DEV-сборке для пополнения hw.game_asset у разработчика.
     $prodManifest = Get-Content $manifestPath -Raw -Encoding utf8 | ConvertFrom-Json
-    $kept     = @($prodManifest.host_permissions | Where-Object { $_ -notmatch '^http://localhost' })
-    $stripped = @($prodManifest.host_permissions | Where-Object { $_ -match '^http://localhost' })
+
+    $devOnlyHostRegex = '^(http://localhost|https://heroesmobile-a-cdn\.nextersglobal\.com)'
+    $kept     = @($prodManifest.host_permissions | Where-Object { $_ -notmatch $devOnlyHostRegex })
+    $stripped = @($prodManifest.host_permissions | Where-Object { $_ -match $devOnlyHostRegex })
     $prodManifest.host_permissions = $kept
     if ($stripped.Count -gt 0) {
         Write-Host "  убрано из host_permissions для prod-сборки: $($stripped -join ', ')" -ForegroundColor DarkGray
+    }
+
+    $devOnlyPerms = @('webRequest')
+    $permsKept     = @($prodManifest.permissions | Where-Object { $devOnlyPerms -notcontains $_ })
+    $permsStripped = @($prodManifest.permissions | Where-Object { $devOnlyPerms -contains $_ })
+    $prodManifest.permissions = $permsKept
+    if ($permsStripped.Count -gt 0) {
+        Write-Host "  убрано из permissions для prod-сборки: $($permsStripped -join ', ')" -ForegroundColor DarkGray
     }
 
     foreach ($cs in $prodManifest.content_scripts) {
