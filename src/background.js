@@ -360,7 +360,7 @@ async function flushAssetQueue(cfg) {
     const batch = assetQueue.splice(0, assetQueue.length);
     // Шлём в каждый target параллельно, успех = хотя бы один OK. Endpoint PUBLIC,
     // но валидируется на сервере (allowed prefixes, лимиты) — мусор отбрасывается молча.
-    await Promise.allSettled(cfg.targets.map(async (t) => {
+    const results = await Promise.allSettled(cfg.targets.map(async (t) => {
         const res = await fetch(`${t.url}/api/hw/asset/seen`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -368,6 +368,32 @@ async function flushAssetQueue(cfg) {
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
     }));
+    const anyOk = results.some(r => r.status === 'fulfilled');
+    if (anyOk) {
+        const paths = batch.map(b => b.assetPath).filter(Boolean);
+        if (paths.length > 0) broadcastAssetToastToGameTabs(paths);
+        console.log('[HW-EXT-BG] asset/seen ok, batch=', batch.length);
+    } else {
+        console.warn('[HW-EXT-BG] asset/seen failed для всех targets, batch=', batch.length);
+    }
+}
+
+/**
+ * Broadcast в content-script списка assetPath, только что успешно отправленных в ms-hw.
+ * Content.js рисует синие toast'ы — отдельная цветовая ветка от обычных RPC-toast'ов,
+ * чтобы DEV-ассеты визуально не путались с боевым ingest'ом.
+ */
+async function broadcastAssetToastToGameTabs(assetPaths) {
+    try {
+        const tabs = await chrome.tabs.query({ url: 'https://*.hero-wars-alliance.com/*' });
+        for (const tab of tabs) {
+            if (tab.id != null) {
+                chrome.tabs.sendMessage(tab.id, { type: 'hw-asset-toast', assetPaths }).catch(() => {});
+            }
+        }
+    } catch (e) {
+        console.warn('[HW-EXT-BG] broadcastAssetToast failed:', e.message);
+    }
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
