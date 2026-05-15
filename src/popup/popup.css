@@ -274,6 +274,46 @@ button:active { transform: translateY(1px); }
 .warden-link:hover { background: #1d4ed8; }
 .warden-link:active { transform: translateY(1px); }
 
+/* ======= Переключатель локали ======= */
+.locale-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 4px 2px 0;
+}
+.locale-label {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.locale-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--card);
+}
+.locale-toggle button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.locale-toggle button + button { border-left: 1px solid var(--border); }
+.locale-toggle button:hover { background: var(--bg); color: var(--text); }
+.locale-toggle button.active {
+  background: var(--primary);
+  color: #fff;
+}
+
 /* ======= Футер ======= */
 .footer {
   margin-top: 10px;

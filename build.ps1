@@ -5,8 +5,8 @@
 #     powershell -ExecutionPolicy Bypass -File .\build.ps1
 #
 # Создаёт `warden-<version>.zip` в корне, имя версии берётся из manifest.json.
-# В zip попадают ТОЛЬКО manifest.json + src/ + icons/. README, .git, .idea,
-# tools/ (popup-preview), node_modules/, старые zip-ы — отсекаются.
+# В zip попадают ТОЛЬКО manifest.json + src/ + icons/ + _locales/. README, .git,
+# .idea, tools/ (popup-preview), node_modules/, старые zip-ы — отсекаются.
 #
 # manifest.json в zip патчится: убираются host_permissions для localhost (нужны только
 # в DEV-сборке Load unpacked для fan-out на локальный ms-hw). На прод-копии в Chrome Web
@@ -97,9 +97,9 @@ try {
         $manifestStream.Dispose()
     }
 
-    # src/ и icons/ рекурсивно, с forward-slash entry names
+    # src/, icons/ и _locales/ рекурсивно, с forward-slash entry names
     $prefix = $base + '\'
-    Get-ChildItem -Path (Join-Path $base 'src'), (Join-Path $base 'icons') -Recurse -File | ForEach-Object {
+    Get-ChildItem -Path (Join-Path $base 'src'), (Join-Path $base 'icons'), (Join-Path $base '_locales') -Recurse -File | ForEach-Object {
         $rel = $_.FullName.Substring($prefix.Length).Replace('\', '/')
         [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $_.FullName, $rel, 'Optimal') | Out-Null
     }

@@ -1,0 +1,59 @@
+{
+  "extName": {
+    "message": "Warden — перехватчик RPC для аналитики HW Alliance",
+    "description": "Имя расширения в chrome://extensions и в Chrome Web Store."
+  },
+  "extDesc": {
+    "message": "Перехватывает игровые RPC-вызовы и пересылает их в Warden для аналитики HW Alliance. Неофициальное расширение.",
+    "description": "Краткое описание расширения."
+  },
+
+  "brand_tagline": { "message": "аналитика HW Alliance" },
+
+  "stat_queue":        { "message": "В очереди" },
+  "stat_lastCapture":  { "message": "Последний ивент" },
+  "stat_lastSync":     { "message": "Последняя отправка" },
+  "stat_totalSent":    { "message": "Всего отправлено" },
+  "stat_failed":       { "message": "Ошибок в последнем батче" },
+  "open_warden":       { "message": "Открыть Warden →" },
+
+  "locale_label": { "message": "Язык" },
+  "locale_auto":  { "message": "Авто" },
+
+  "role_MASTER":  { "message": "Мастер" },
+  "role_GENERAL": { "message": "Генерал" },
+  "role_OFFICER": { "message": "Офицер" },
+  "role_MEMBER":  { "message": "Участник" },
+
+  "ago_sec": { "message": "$1 сек назад" },
+  "ago_min": { "message": "$1 мин назад" },
+  "ago_hr":  { "message": "$1 ч назад"  },
+  "ago_day": { "message": "$1 д назад"  },
+
+  "status_idle":       { "message": "Ожидание данных из игры…" },
+  "status_login":      { "message": "Зайди в игру чтобы начать передачу" },
+  "status_error":      { "message": "Ошибка отправки ($1 звонков не дошло)" },
+  "status_warn":       { "message": "Очередь не уходит ($1 записей)" },
+  "status_collecting": { "message": "Собираем данные…" },
+  "status_synced":     { "message": "Синхронизировано · $1" },
+
+  "toast_sent":  { "message": "↑ Отправлено" },
+  "toast_asset": { "message": "↑ CDN-ассет"  },
+
+  "rpc_user_getClanInfo":               { "message": "Профиль и гильдия" },
+  "rpc_clanClash_getUserClanResult":    { "message": "Столкновение: результаты дня" },
+  "rpc_clanClash_getLaneBattle":        { "message": "Столкновение: составы боя" },
+  "rpc_clanClash_getCurrentState":      { "message": "Столкновение: текущее состояние" },
+  "rpc_clanWarChampDefence_getDefence": { "message": "Чемпионат: защита игроков" },
+  "rpc_clanWarGetInfo":                 { "message": "Война: активная война" },
+  "rpc_clanWarGetDayHistory":           { "message": "Война: история дня" },
+  "rpc_clanWarGetAvailableHistory":     { "message": "Война: список войн" },
+  "rpc_clanWarGetDefence":              { "message": "Война: наша защита" },
+  "rpc_clanWar_SetTargetMark":          { "message": "Война: назначение на цель" },
+  "rpc_clanWarAttack":                  { "message": "Война: старт атаки" },
+  "rpc_clanWarEndBattle":               { "message": "Война: результат боя" },
+  "rpc_inventoryGet":                   { "message": "Инвентарь игрока" },
+  "rpc_heroGetAll":                     { "message": "Прогресс героев" },
+  "rpc_titanGetAll":                    { "message": "Прогресс титанов" },
+  "rpc_userGetInfo":                    { "message": "Профиль игрока" }
+}

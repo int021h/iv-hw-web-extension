@@ -12,7 +12,7 @@
     <img class="brand-logo" src="../../icons/icon-128.png" alt="Warden">
     <div class="brand-text">
       <div class="brand-name">Warden</div>
-      <div class="brand-tagline">аналитика HW Alliance</div>
+      <div class="brand-tagline" data-i18n="brand_tagline">аналитика HW Alliance</div>
     </div>
     <span class="brand-version" id="version"></span>
   </header>
@@ -35,27 +35,38 @@
   <!-- Статус подключения -->
   <div class="status" id="status" data-state="idle">
     <span class="status-dot"></span>
-    <span class="status-text" id="statusText">Ожидание данных из игры…</span>
+    <span class="status-text" id="statusText" data-i18n="status_idle">Ожидание данных из игры…</span>
   </div>
 
   <!-- Краткая статистика -->
   <div class="stats">
-    <div class="stat"><span>В очереди</span><b id="queueSize">0</b></div>
-    <div class="stat"><span>Последний ивент</span><b id="lastCapture">—</b></div>
-    <div class="stat"><span>Последняя отправка</span><b id="lastSync">—</b></div>
-    <div class="stat"><span>Всего отправлено</span><b id="totalSent">0</b></div>
-    <div class="stat stat-error" id="failedRow" hidden><span>Ошибок в последнем батче</span><b id="lastFailed">0</b></div>
+    <div class="stat"><span data-i18n="stat_queue">В очереди</span><b id="queueSize">0</b></div>
+    <div class="stat"><span data-i18n="stat_lastCapture">Последний ивент</span><b id="lastCapture">—</b></div>
+    <div class="stat"><span data-i18n="stat_lastSync">Последняя отправка</span><b id="lastSync">—</b></div>
+    <div class="stat"><span data-i18n="stat_totalSent">Всего отправлено</span><b id="totalSent">0</b></div>
+    <div class="stat stat-error" id="failedRow" hidden><span data-i18n="stat_failed">Ошибок в последнем батче</span><b id="lastFailed">0</b></div>
   </div>
 
   <!-- href проставляется в popup.js (DEV → localhost, PROD → warden.pankov.dev) -->
-  <a class="warden-link" id="wardenLink" target="_blank" rel="noopener noreferrer">
+  <a class="warden-link" id="wardenLink" target="_blank" rel="noopener noreferrer" data-i18n="open_warden">
     Открыть Warden →
   </a>
+
+  <!-- Переключатель языка: Auto / RU / EN. Override сохраняется в chrome.storage. -->
+  <div class="locale-row">
+    <span class="locale-label" data-i18n="locale_label">Язык</span>
+    <div class="locale-toggle" id="localeToggle">
+      <button type="button" data-locale="" data-i18n="locale_auto">Авто</button>
+      <button type="button" data-locale="ru">RU</button>
+      <button type="button" data-locale="en">EN</button>
+    </div>
+  </div>
 
   <div class="footer">
     <span id="backend">warden-api.pankov.dev</span>
   </div>
 
+  <script src="../i18n.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

@@ -25,27 +25,17 @@
   const TOAST_FADE_MS = 250;          // длительность fade-out при удалении
 
   // Человекочитаемые имена для RPC-методов из ALLOWED_METHODS (см. inject.js).
+  // Все переводы — в _locales/<lang>/messages.json под ключами `rpc_<method>`.
   // Если метод не в словаре — показываем сырой код, чтобы было видно что добавить.
-  const METHOD_LABELS = {
-    'user_getClanInfo':               'Профиль и гильдия',
-    'clanClash_getUserClanResult':    'Столкновение: результаты дня',
-    'clanClash_getLaneBattle':        'Столкновение: составы боя',
-    'clanClash_getCurrentState':      'Столкновение: текущее состояние',
-    'clanWarChampDefence_getDefence': 'Чемпионат: защита игроков',
-    'clanWarGetInfo':                 'Война: активная война',
-    'clanWarGetDayHistory':           'Война: история дня',
-    'clanWarGetAvailableHistory':     'Война: список войн',
-    'clanWarGetDefence':              'Война: наша защита',
-    'clanWar_SetTargetMark':          'Война: назначение на цель',
-    'clanWarAttack':                  'Война: старт атаки',
-    'clanWarEndBattle':               'Война: результат боя',
-    'inventoryGet':                   'Инвентарь игрока',
-    'heroGetAll':                     'Прогресс героев',
-    'titanGetAll':                    'Прогресс титанов',
-    'userGetInfo':                    'Профиль игрока',
+  const labelFor = (method) => {
+    const key = `rpc_${method}`;
+    const translated = HWI18N.t(key);
+    return translated === key ? method : translated;
   };
 
-  const labelFor = (method) => METHOD_LABELS[method] || method;
+  // Запускаем загрузку словаря сразу. До готовности t() возвращает ключи, что для
+  // первых ~100мс безопасно — pill/тосты обновятся при следующем rerender.
+  HWI18N.init();
 
   // Стили подключаем через constructable stylesheets — бежит мимо Content-Security-Policy
   // сайта (иначе inline style на элементе игрой бы блокировался).
@@ -210,7 +200,7 @@
     spawnToast({
       variant: 'rpc',
       titleAttr: method,
-      labelText: '↑ Отправлено',
+      labelText: HWI18N.t('toast_sent'),
       bodyText: labelFor(method),
     });
   }
@@ -219,7 +209,7 @@
     spawnToast({
       variant: 'asset',
       titleAttr: assetPath,
-      labelText: '↑ CDN-ассет',
+      labelText: HWI18N.t('toast_asset'),
       bodyText: assetPath,
     });
   }

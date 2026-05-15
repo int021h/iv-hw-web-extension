@@ -1,0 +1,59 @@
+{
+  "extName": {
+    "message": "Warden — RPC interceptor for HW Alliance analytics",
+    "description": "Extension name shown in chrome://extensions and the Chrome Web Store."
+  },
+  "extDesc": {
+    "message": "Intercepts in-game RPC calls and forwards them to Warden for HW Alliance analytics. Unofficial extension.",
+    "description": "Short extension description."
+  },
+
+  "brand_tagline": { "message": "HW Alliance analytics" },
+
+  "stat_queue":        { "message": "In queue" },
+  "stat_lastCapture":  { "message": "Last event" },
+  "stat_lastSync":     { "message": "Last sync" },
+  "stat_totalSent":    { "message": "Total sent" },
+  "stat_failed":       { "message": "Errors in last batch" },
+  "open_warden":       { "message": "Open Warden →" },
+
+  "locale_label": { "message": "Language" },
+  "locale_auto":  { "message": "Auto" },
+
+  "role_MASTER":  { "message": "Master" },
+  "role_GENERAL": { "message": "General" },
+  "role_OFFICER": { "message": "Officer" },
+  "role_MEMBER":  { "message": "Member" },
+
+  "ago_sec": { "message": "$1s ago" },
+  "ago_min": { "message": "$1m ago" },
+  "ago_hr":  { "message": "$1h ago" },
+  "ago_day": { "message": "$1d ago" },
+
+  "status_idle":       { "message": "Waiting for game data…" },
+  "status_login":      { "message": "Log into the game to start transmission" },
+  "status_error":      { "message": "Send error ($1 calls failed)" },
+  "status_warn":       { "message": "Queue is stuck ($1 records)" },
+  "status_collecting": { "message": "Collecting data…" },
+  "status_synced":     { "message": "Synced · $1" },
+
+  "toast_sent":  { "message": "↑ Sent" },
+  "toast_asset": { "message": "↑ CDN asset" },
+
+  "rpc_user_getClanInfo":               { "message": "Profile and guild" },
+  "rpc_clanClash_getUserClanResult":    { "message": "Clash: daily results" },
+  "rpc_clanClash_getLaneBattle":        { "message": "Clash: battle lineups" },
+  "rpc_clanClash_getCurrentState":      { "message": "Clash: current state" },
+  "rpc_clanWarChampDefence_getDefence": { "message": "Championship: players' defense" },
+  "rpc_clanWarGetInfo":                 { "message": "War: active war" },
+  "rpc_clanWarGetDayHistory":           { "message": "War: day history" },
+  "rpc_clanWarGetAvailableHistory":     { "message": "War: war list" },
+  "rpc_clanWarGetDefence":              { "message": "War: our defense" },
+  "rpc_clanWar_SetTargetMark":          { "message": "War: target assignment" },
+  "rpc_clanWarAttack":                  { "message": "War: attack start" },
+  "rpc_clanWarEndBattle":               { "message": "War: battle result" },
+  "rpc_inventoryGet":                   { "message": "Player inventory" },
+  "rpc_heroGetAll":                     { "message": "Heroes progress" },
+  "rpc_titanGetAll":                    { "message": "Titans progress" },
+  "rpc_userGetInfo":                    { "message": "Player profile" }
+}
