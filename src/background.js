@@ -57,6 +57,7 @@ let flushing = false;
     // permission вырезается build.ps1, поэтому регистрировать listener бессмысленно
     // (а попытка вызвать chrome.webRequest без разрешения тихо падает).
     if (cfg.isDev) initAssetUrlCollector(cfg);
+    if (cfg.isDev) initGameDataDumper();
   } catch { /* ignore */ }
 })();
 
@@ -393,6 +394,173 @@ async function broadcastAssetToastToGameTabs(assetPaths) {
         }
     } catch (e) {
         console.warn('[HW-EXT-BG] broadcastAssetToast failed:', e.message);
+    }
+}
+
+// ============================================================
+// Game data dumper (DEV-only)
+// ============================================================
+// Перехват splitlib.json.zip + ru.json.gz / en.json.gz + JSON-ов remote-config
+// (hwmb-remote-config-cdn) и сохранение их в Chrome Downloads под
+// `HW/data/<version>/...`. Версия извлекается из path игровой CDN
+// (`/v/webgl/<VER>/v0001/...`) и переиспользуется для remote-config файлов,
+// у которых в URL нет game-version (только hash).
+//
+// Чтобы файлы оказывались в D:\HW\data — один раз вне расширения сделать симлинк:
+//   mklink /D D:\HW\data %USERPROFILE%\Downloads\HW\data
+//
+// MV3 не пишет на произвольный путь файловой системы из SW: chrome.downloads.download
+// работает только относительно Downloads-папки (Chrome создаёт подпапки сам). Сменить
+// глобальную downloads-папку Chrome — альтернатива, но влияет на ВСЕ скачивания
+// браузера; симлинк точечнее.
+//
+// Дедуп по точному URL: для splitlib/translations URL содержит версию в path
+// (новая версия → новый URL), для remote-config URL содержит hash. Persist
+// в chrome.storage.local чтобы SW-перезапуски не качали повторно.
+//
+// В prod-сборке build.ps1 вырезает host_permission `hwmb-remote-config-cdn` и
+// permission `downloads`, поэтому эта функция вообще не вызывается (cfg.isDev=false).
+
+// URL у вендора: /v/<platform>/<version>/v<manifest>/<hash>/<dir>/<file>
+// Пример: /v/an/1.278.0/v0046/53bc272ae7c0148f676a648993bf0aec/lib/splitlib.json.zip
+// platform может быть `an` (android), `webgl` и т.п. — берём любой; внутри одной
+// версии игры (`1.278.0`) hash может меняться при горячих ребилдах ассетов —
+// поэтому в folder name складываем оба, чтобы каждый ребилд лежал отдельно.
+const URL_PARTS_RE = /\/v\/[a-z0-9]+\/([0-9][0-9.]*)\/(v\d+)\/([a-f0-9]+)\//i;
+const SPLITLIB_RE     = /\/splitlib\.json\.zip(?:\?|$)/i;
+const TRANSLATION_RE  = /\/(ru|en)\.json\.gz(?:\?|$)/i;
+// Узкий whitelist remote-config: только файлы, которые реально потребляет ms-hw.
+// Игра тащит с hwmb-remote-config-cdn десятки JSON'ов (рейды, башни, локации, ...),
+// неотфильтрованный listener забьёт диск ненужным мусором.
+const REMOTE_CFG_FILE_RE = /\/(specialQuestEvent|specialQuestGroup|questChain|personalResearch|personalResearchLevel|bonus)[A-Za-z0-9._-]*\.json(?:\?|$)/i;
+
+// Любой *.nextersglobal.com — чтобы поймать splitlib/translations независимо от того,
+// на каком конкретно поддомене CDN они лежат (`heroesmobile-a-cdn`, `heroesmobile-mb-cdn`
+// и т.п. — у вендора иногда разные субдомены под разные ресурсы). host_permissions
+// тоже расширен в manifest.json до `*://*.nextersglobal.com/*` (DEV-only).
+const GAMEDATA_URL_PATTERNS = [
+    '*://*.nextersglobal.com/*'
+];
+
+const SEEN_URLS_MAX = 500;
+let detectedBuild = null; // { version, manifest, hash } — последняя замеченная сборка
+
+function initGameDataDumper() {
+    if (!chrome.webRequest || !chrome.downloads) {
+        console.warn('[HW-EXT-BG] webRequest/downloads API недоступен, gamedata dumper выключен');
+        return;
+    }
+    chrome.storage.local.get('gamedataBuild').then(({ gamedataBuild }) => {
+        if (gamedataBuild) detectedBuild = gamedataBuild;
+    });
+    chrome.webRequest.onBeforeRequest.addListener(
+        (details) => {
+            tryDumpGameData(details.url).catch(e => console.warn('[HW-EXT-BG] gamedata dump fail:', e.message));
+        },
+        { urls: GAMEDATA_URL_PATTERNS }
+    );
+    console.log('[HW-EXT-BG] DEV gamedata dumper активирован');
+}
+
+async function tryDumpGameData(url) {
+    const isSplitlib    = SPLITLIB_RE.test(url);
+    const trMatch       = TRANSLATION_RE.exec(url);
+    const cfgFileMatch  = REMOTE_CFG_FILE_RE.exec(url);
+
+    // Диагностика: видим, какие URL вообще проходят через listener. Без
+    // этого классификационный баг (например, splitlib на неизвестном поддомене)
+    // невидим, потому что фильтр молча отбрасывает. Логируем только не-классифицированное
+    // в `*.json` / `*.json.gz` / `*.json.zip` — чтобы не флудить картинками.
+    if (!isSplitlib && !trMatch && !cfgFileMatch) {
+        if (/\.json(\.gz|\.zip)?(\?|$)/i.test(url)) {
+            console.debug('[HW-EXT-BG] gamedata IGNORED (no match):', url);
+        }
+        return;
+    }
+
+    const { gamedataSeenUrls } = await chrome.storage.local.get('gamedataSeenUrls');
+    const seen = new Set(gamedataSeenUrls || []);
+    if (seen.has(url)) return;
+
+    const partsMatch = URL_PARTS_RE.exec(url);
+    if (partsMatch) {
+        const fresh = { version: partsMatch[1], manifest: partsMatch[2], hash: partsMatch[3] };
+        if (!detectedBuild || detectedBuild.hash !== fresh.hash) {
+            detectedBuild = fresh;
+            chrome.storage.local.set({ gamedataBuild: fresh });
+        }
+    }
+    // Если сборка (version+manifest+hash) ещё не известна — НЕ качаем. Раньше
+    // дамп шёл в `unknown-version/`, и при первом запуске игры с пустым кешем туда
+    // сваливалось всё подряд. Сборка определится из splitlib/translations URL
+    // (он первым приходит с игровой CDN) — после этого конфиги поедут в нужную папку.
+    if (!detectedBuild) {
+        console.debug('[HW-EXT-BG] gamedata DEFERRED (build unknown):', url);
+        return;
+    }
+    const { version, manifest, hash } = detectedBuild;
+    const buildFolder = `${version}/${manifest}-${hash}`;
+
+    let folder, basename;
+    if (isSplitlib) {
+        folder = buildFolder;
+        basename = 'splitlib.json.zip';
+    } else if (trMatch) {
+        folder = buildFolder;
+        basename = `${trMatch[1].toLowerCase()}.json.gz`;
+    } else {
+        // remote-config: basename = последний path-сегмент, который у вендора уже
+        // содержит hash в имени (specialQuestEvent_<hash>.json и т.п.) — это и
+        // обеспечивает дедуп при смене конфига.
+        try {
+            const u = new URL(url);
+            const segs = u.pathname.split('/').filter(Boolean);
+            basename = segs[segs.length - 1] || 'remote-config.json';
+        } catch {
+            basename = 'remote-config.json';
+        }
+        folder = `${buildFolder}/remote-config`;
+    }
+
+    const filename = `HW/data/${folder}/${basename}`;
+    try {
+        const downloadId = await chrome.downloads.download({
+            url,
+            filename,
+            saveAs: false,
+            conflictAction: 'overwrite'
+        });
+        seen.add(url);
+        console.log('[HW-EXT-BG] gamedata dumped:', filename, 'id=', downloadId);
+
+        // Зеркальная локаль: при перехвате ru.json.gz сразу качаем en.json.gz
+        // (и наоборот). Иначе чтобы получить вторую локаль пришлось бы вручную
+        // переключать язык в игре — она ленится и грузит только активный.
+        if (trMatch) {
+            const otherLang = trMatch[1].toLowerCase() === 'ru' ? 'en' : 'ru';
+            const otherUrl = url.replace(/\/(ru|en)\.json\.gz/i, `/${otherLang}.json.gz`);
+            if (otherUrl !== url && !seen.has(otherUrl)) {
+                const otherFilename = `HW/data/${buildFolder}/${otherLang}.json.gz`;
+                try {
+                    await chrome.downloads.download({
+                        url: otherUrl,
+                        filename: otherFilename,
+                        saveAs: false,
+                        conflictAction: 'overwrite'
+                    });
+                    seen.add(otherUrl);
+                    console.log('[HW-EXT-BG] mirror locale dumped:', otherFilename);
+                } catch (e) {
+                    console.warn('[HW-EXT-BG] mirror download failed:', otherFilename, '→', e.message);
+                }
+            }
+        }
+
+        const arr = Array.from(seen);
+        const trimmed = arr.length > SEEN_URLS_MAX ? arr.slice(arr.length - SEEN_URLS_MAX) : arr;
+        await chrome.storage.local.set({ gamedataSeenUrls: trimmed });
+    } catch (e) {
+        console.warn('[HW-EXT-BG] download failed:', filename, '→', e.message);
     }
 }
 

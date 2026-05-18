@@ -12,6 +12,8 @@
 # в DEV-сборке Load unpacked для fan-out на локальный ms-hw). На прод-копии в Chrome Web
 # Store фетчи на localhost не идут (chrome.management.getSelf().installType=='normal' →
 # targets=[PROD] only), и broad-permission на localhost только провоцирует ревьюеров.
+# Также вырезаются DEV-only: heroesmobile-a-cdn (asset URL collector) + hwmb-remote-config-cdn
+# (gamedata dumper) host_permissions и `webRequest`/`downloads` permissions.
 #
 # Почему такой рукопашный способ: PowerShell 5.1 (Windows по умолчанию) в
 # CreateFromDirectory пишет пути с backslash-ами — ZIP-спецификация требует
@@ -61,7 +63,7 @@ try {
     # permission) — он живёт только в DEV-сборке для пополнения hw.game_asset у разработчика.
     $prodManifest = Get-Content $manifestPath -Raw -Encoding utf8 | ConvertFrom-Json
 
-    $devOnlyHostRegex = '^(http://localhost|https://heroesmobile-a-cdn\.nextersglobal\.com)'
+    $devOnlyHostRegex = '^(http://localhost|https://[^/]*\.nextersglobal\.com)'
     $kept     = @($prodManifest.host_permissions | Where-Object { $_ -notmatch $devOnlyHostRegex })
     $stripped = @($prodManifest.host_permissions | Where-Object { $_ -match $devOnlyHostRegex })
     $prodManifest.host_permissions = $kept
@@ -69,7 +71,7 @@ try {
         Write-Host "  убрано из host_permissions для prod-сборки: $($stripped -join ', ')" -ForegroundColor DarkGray
     }
 
-    $devOnlyPerms = @('webRequest')
+    $devOnlyPerms = @('webRequest', 'downloads')
     $permsKept     = @($prodManifest.permissions | Where-Object { $devOnlyPerms -notcontains $_ })
     $permsStripped = @($prodManifest.permissions | Where-Object { $devOnlyPerms -contains $_ })
     $prodManifest.permissions = $permsKept
