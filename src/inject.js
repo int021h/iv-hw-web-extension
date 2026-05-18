@@ -22,7 +22,10 @@
     'inventoryGet',
     'heroGetAll',
     'titanGetAll',
-    'userGetInfo'
+    'userGetInfo',
+    // --- Events: квесты пользователя + remote-config URLs для CDN-чейнов ---
+    'questGetAll',
+    'remoteConfigInit'
   ]);
 
   const log = (...a) => DEBUG && console.log('[HW-EXT]', ...a);

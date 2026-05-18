@@ -55,5 +55,7 @@
   "rpc_inventoryGet":                   { "message": "Player inventory" },
   "rpc_heroGetAll":                     { "message": "Heroes progress" },
   "rpc_titanGetAll":                    { "message": "Titans progress" },
-  "rpc_userGetInfo":                    { "message": "Player profile" }
+  "rpc_userGetInfo":                    { "message": "Player profile" },
+  "rpc_questGetAll":                    { "message": "Events: player quests" },
+  "rpc_remoteConfigInit":               { "message": "Events: chain config URLs" }
 }

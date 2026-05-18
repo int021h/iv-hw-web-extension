@@ -55,5 +55,7 @@
   "rpc_inventoryGet":                   { "message": "Инвентарь игрока" },
   "rpc_heroGetAll":                     { "message": "Прогресс героев" },
   "rpc_titanGetAll":                    { "message": "Прогресс титанов" },
-  "rpc_userGetInfo":                    { "message": "Профиль игрока" }
+  "rpc_userGetInfo":                    { "message": "Профиль игрока" },
+  "rpc_questGetAll":                    { "message": "Эвенты: задачи игрока" },
+  "rpc_remoteConfigInit":               { "message": "Эвенты: ссылки на цепочки" }
 }
