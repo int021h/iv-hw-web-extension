@@ -25,6 +25,7 @@
     'userGetInfo',
     // --- Events: квесты пользователя + remote-config URLs для CDN-чейнов ---
     'questGetAll',
+    'questGetEvents',
     'remoteConfigInit'
   ]);
 

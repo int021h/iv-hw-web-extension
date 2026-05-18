@@ -57,5 +57,6 @@
   "rpc_titanGetAll":                    { "message": "Titans progress" },
   "rpc_userGetInfo":                    { "message": "Player profile" },
   "rpc_questGetAll":                    { "message": "Events: player quests" },
+  "rpc_questGetEvents":                 { "message": "Events: list with runtime meta" },
   "rpc_remoteConfigInit":               { "message": "Events: chain config URLs" }
 }
