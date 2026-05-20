@@ -429,10 +429,14 @@ async function broadcastAssetToastToGameTabs(assetPaths) {
 const URL_PARTS_RE = /\/v\/[a-z0-9]+\/([0-9][0-9.]*)\/(v\d+)\/([a-f0-9]+)\//i;
 const SPLITLIB_RE     = /\/splitlib\.json\.zip(?:\?|$)/i;
 const TRANSLATION_RE  = /\/(ru|en)\.json\.gz(?:\?|$)/i;
-// Узкий whitelist remote-config: только файлы, которые реально потребляет ms-hw.
-// Игра тащит с hwmb-remote-config-cdn десятки JSON'ов (рейды, башни, локации, ...),
-// неотфильтрованный listener забьёт диск ненужным мусором.
-const REMOTE_CFG_FILE_RE = /\/(specialQuestEvent|specialQuestGroup|questChain|personalResearch|personalResearchLevel|bonus)[A-Za-z0-9._-]*\.json(?:\?|$)/i;
+// Remote-config с hwmb-remote-config-cdn имеет вид `/config/<name>/<hash>.json`.
+// Из URL вытаскиваем <name> и пускаем дальше только то, что реально потребляет ms-hw —
+// иначе листенер забьёт диск десятками вендорских JSON'ов (рейды/башни/локации/...).
+const REMOTE_CFG_NAME_RE = /\/config\/([A-Za-z0-9_]+)\/[a-f0-9]+\.json(?:\?|$)/i;
+const REMOTE_CFG_WANTED = new Set([
+    'squadHeroSkill', 'squadHeroSkillLevel',              // strategic-умения «Царства»
+    'personalResearch', 'personalResearchLevel', 'bonus', // Стратегическая База: Технологии
+]);
 
 // Любой *.nextersglobal.com — чтобы поймать splitlib/translations независимо от того,
 // на каком конкретно поддомене CDN они лежат (`heroesmobile-a-cdn`, `heroesmobile-mb-cdn`
@@ -465,13 +469,15 @@ function initGameDataDumper() {
 async function tryDumpGameData(url) {
     const isSplitlib    = SPLITLIB_RE.test(url);
     const trMatch       = TRANSLATION_RE.exec(url);
-    const cfgFileMatch  = REMOTE_CFG_FILE_RE.exec(url);
+    const cfgNameMatch  = REMOTE_CFG_NAME_RE.exec(url);
+    // <name> конфига, если он в whitelist'е ms-hw; иначе null (чужой remote-config — мимо).
+    const cfgName       = cfgNameMatch && REMOTE_CFG_WANTED.has(cfgNameMatch[1]) ? cfgNameMatch[1] : null;
 
     // Диагностика: видим, какие URL вообще проходят через listener. Без
     // этого классификационный баг (например, splitlib на неизвестном поддомене)
     // невидим, потому что фильтр молча отбрасывает. Логируем только не-классифицированное
     // в `*.json` / `*.json.gz` / `*.json.zip` — чтобы не флудить картинками.
-    if (!isSplitlib && !trMatch && !cfgFileMatch) {
+    if (!isSplitlib && !trMatch && !cfgName) {
         if (/\.json(\.gz|\.zip)?(\?|$)/i.test(url)) {
             console.debug('[HW-EXT-BG] gamedata IGNORED (no match):', url);
         }
@@ -480,7 +486,9 @@ async function tryDumpGameData(url) {
 
     const { gamedataSeenUrls } = await chrome.storage.local.get('gamedataSeenUrls');
     const seen = new Set(gamedataSeenUrls || []);
-    if (seen.has(url)) return;
+    // Дедуп НЕ по одному url: см. dedupKey ниже — иначе version-стабильный remote-config
+    // (его URL без версии, только content-hash) скачается лишь однажды и не попадёт в папки
+    // последующих сборок игры.
 
     const partsMatch = URL_PARTS_RE.exec(url);
     if (partsMatch) {
@@ -509,20 +517,19 @@ async function tryDumpGameData(url) {
         folder = buildFolder;
         basename = `${trMatch[1].toLowerCase()}.json.gz`;
     } else {
-        // remote-config: basename = последний path-сегмент, который у вендора уже
-        // содержит hash в имени (specialQuestEvent_<hash>.json и т.п.) — это и
-        // обеспечивает дедуп при смене конфига.
-        try {
-            const u = new URL(url);
-            const segs = u.pathname.split('/').filter(Boolean);
-            basename = segs[segs.length - 1] || 'remote-config.json';
-        } catch {
-            basename = 'remote-config.json';
-        }
-        folder = `${buildFolder}/remote-config`;
+        // remote-config: имя файла = <name> из `/config/<name>/<hash>.json`. Сохраняем
+        // стабильным именем (`squadHeroSkill.json`) прямо в папку сборки, рядом со
+        // splitlib.json.zip — там его и ищет импорт-скан.
+        basename = `${cfgName}.json`;
+        folder = buildFolder;
     }
 
     const filename = `HW/data/${folder}/${basename}`;
+    // Дедуп по паре «назначение|источник»: filename несёт версию+сборку, url — content-hash.
+    // Version-стабильный конфиг всё равно скачается в КАЖДУЮ новую папку сборки, а внутри
+    // одной сборки тот же файл повторно не качается.
+    const dedupKey = `${filename}|${url}`;
+    if (seen.has(dedupKey)) return;
     try {
         const downloadId = await chrome.downloads.download({
             url,
@@ -530,7 +537,7 @@ async function tryDumpGameData(url) {
             saveAs: false,
             conflictAction: 'overwrite'
         });
-        seen.add(url);
+        seen.add(dedupKey);
         console.log('[HW-EXT-BG] gamedata dumped:', filename, 'id=', downloadId);
 
         // Зеркальная локаль: при перехвате ru.json.gz сразу качаем en.json.gz
@@ -539,8 +546,9 @@ async function tryDumpGameData(url) {
         if (trMatch) {
             const otherLang = trMatch[1].toLowerCase() === 'ru' ? 'en' : 'ru';
             const otherUrl = url.replace(/\/(ru|en)\.json\.gz/i, `/${otherLang}.json.gz`);
-            if (otherUrl !== url && !seen.has(otherUrl)) {
-                const otherFilename = `HW/data/${buildFolder}/${otherLang}.json.gz`;
+            const otherFilename = `HW/data/${buildFolder}/${otherLang}.json.gz`;
+            const otherKey = `${otherFilename}|${otherUrl}`;
+            if (otherUrl !== url && !seen.has(otherKey)) {
                 try {
                     await chrome.downloads.download({
                         url: otherUrl,
@@ -548,7 +556,7 @@ async function tryDumpGameData(url) {
                         saveAs: false,
                         conflictAction: 'overwrite'
                     });
-                    seen.add(otherUrl);
+                    seen.add(otherKey);
                     console.log('[HW-EXT-BG] mirror locale dumped:', otherFilename);
                 } catch (e) {
                     console.warn('[HW-EXT-BG] mirror download failed:', otherFilename, '→', e.message);
