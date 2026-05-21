@@ -443,6 +443,9 @@ const REMOTE_CFG_WANTED = new Set([
     // (hash в URL) и часто отдаются из кеша игры — на CDN их URL берём из remoteConfigInit.
     'specialQuestEvent', 'specialQuestGroup', 'specialQuestEventView',
     'quest', 'questChain', 'questCondition', 'questResourceMapping',
+    // Имена ресурсов наград realm-эвентов (которых нет в game_reward_resource).
+    'material', 'lootboxChanced', 'refillableResource', 'unit',
+    'speedUpConstruction', 'speedUpResearch', 'speedUpUnitTraining', 'speedUpUniversal',
 ]);
 
 // Любой *.nextersglobal.com — чтобы поймать splitlib/translations независимо от того,
