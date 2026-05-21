@@ -438,6 +438,11 @@ const REMOTE_CFG_NAME_RE = /\/config\/([A-Za-z0-9_]+)\/[a-f0-9]+\.json(?:\?|$)/i
 const REMOTE_CFG_WANTED = new Set([
     'squadHeroSkill', 'squadHeroSkillLevel',              // strategic-умения «Царства»
     'personalResearch', 'personalResearchLevel', 'bonus', // Стратегическая База: Технологии
+    // realm-эвенты («Осколки Прошлого» и пр.): движок специальных квест-эвентов «Царства».
+    // specialQuestEvent → specialQuestGroup → questChain → quest. Эти конфиги immutable
+    // (hash в URL) и часто отдаются из кеша игры — на CDN их URL берём из remoteConfigInit.
+    'specialQuestEvent', 'specialQuestGroup', 'specialQuestEventView',
+    'quest', 'questChain', 'questCondition', 'questResourceMapping',
 ]);
 
 // Любой *.nextersglobal.com — чтобы поймать splitlib/translations независимо от того,
@@ -456,6 +461,56 @@ function buildKey(b) {
     return b ? `${b.version}/${b.manifest}/${b.hash}` : null;
 }
 
+// Активна ли DEV-выгрузка (отработал initGameDataDumper). rpc-capture-листенер
+// крутится всегда; этим флагом он отличает DEV от prod, чтобы не дёргать
+// chrome.downloads — в prod-сборке этого permission нет.
+let gamedataDumperActive = false;
+
+// remote-config'и из remoteConfigInit, пришедшие до того как стала известна
+// сборка. Сбрасываются в выгрузку, как только detectedBuild определится.
+let pendingRemoteConfigUrls = [];
+
+/** Догоняет отложенные remote-config'и, когда detectedBuild наконец известен. */
+function flushPendingRemoteConfigs() {
+    if (!detectedBuild || pendingRemoteConfigUrls.length === 0) return;
+    const urls = pendingRemoteConfigUrls;
+    pendingRemoteConfigUrls = [];
+    for (const u of urls) {
+        tryDumpGameData(u).catch(e => console.warn('[HW-EXT-BG] pending config dump fail:', e.message));
+    }
+}
+
+/**
+ * Активная выгрузка remote-config по манифесту из RPC `remoteConfigInit`.
+ * `index.configs` = `{ <name>: { url, preload }, ... }` — полный список всех
+ * конфигов с URL. Берём whitelist'нутые ([REMOTE_CFG_WANTED]) и качаем их сами,
+ * не дожидаясь, пока игра запросит их с сети: immutable-конфиги (hash в URL)
+ * она часто отдаёт из своего кеша, и пассивный webRequest-листенер их не видит.
+ *
+ * Дедуп — внутри [tryDumpGameData] (ключ `filename|url`): тот же конфиг в той же
+ * сборке повторно не качается, так что на каждый вход в игру лишних скачиваний нет.
+ */
+function dumpRemoteConfigsFromIndex(index) {
+    const configs = index && index.configs;
+    if (!configs || typeof configs !== 'object') return;
+    let queued = 0;
+    for (const name of Object.keys(configs)) {
+        if (!REMOTE_CFG_WANTED.has(name)) continue;
+        const url = configs[name] && configs[name].url;
+        if (!url) continue;
+        if (detectedBuild) {
+            tryDumpGameData(url).catch(e => console.warn('[HW-EXT-BG] config dump fail:', e.message));
+        } else {
+            pendingRemoteConfigUrls.push(url);
+        }
+        queued++;
+    }
+    if (queued > 0) {
+        console.log('[HW-EXT-BG] remoteConfigInit: ' + queued + ' whitelist-конфигов' +
+            (detectedBuild ? ' отправлено в выгрузку' : ' отложено до определения сборки'));
+    }
+}
+
 function initGameDataDumper() {
     if (!chrome.webRequest || !chrome.downloads) {
         console.warn('[HW-EXT-BG] webRequest/downloads API недоступен, gamedata dumper выключен');
@@ -470,6 +525,7 @@ function initGameDataDumper() {
         },
         { urls: GAMEDATA_URL_PATTERNS }
     );
+    gamedataDumperActive = true;
     console.log('[HW-EXT-BG] DEV gamedata dumper активирован');
 }
 
@@ -507,6 +563,8 @@ async function tryDumpGameData(url) {
             detectedBuild = fresh;
             chrome.storage.local.set({ gamedataBuild: fresh });
         }
+        // Сборка определилась — догоняем remote-config'и, отложенные до этого момента.
+        flushPendingRemoteConfigs();
     }
     // Если сборка (version+manifest+hash) ещё не известна — НЕ качаем. Раньше
     // дамп шёл в `unknown-version/`, и при первом запуске игры с пустым кешем туда
@@ -584,6 +642,18 @@ async function tryDumpGameData(url) {
 
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (msg && msg.type === 'rpc-capture') {
+    // DEV-выгрузка: remoteConfigInit несёт манифест всех remote-config'ов —
+    // достаём из него нужные и качаем активно (см. dumpRemoteConfigsFromIndex).
+    if (gamedataDumperActive && msg.payload && Array.isArray(msg.payload.calls)) {
+        const rc = msg.payload.calls.find(c => c && c.method === 'remoteConfigInit');
+        if (rc && rc.response && rc.response.index) {
+            try {
+                dumpRemoteConfigsFromIndex(rc.response.index);
+            } catch (e) {
+                console.warn('[HW-EXT-BG] remoteConfigInit dump fail:', e.message);
+            }
+        }
+    }
     if (queue.length < MAX_QUEUE) {
       queue.push(msg.payload);
     }
