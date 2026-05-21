@@ -423,9 +423,11 @@ async function broadcastAssetToastToGameTabs(assetPaths) {
 
 // URL у вендора: /v/<platform>/<version>/v<manifest>/<hash>/<dir>/<file>
 // Пример: /v/an/1.278.0/v0046/53bc272ae7c0148f676a648993bf0aec/lib/splitlib.json.zip
-// platform может быть `an` (android), `webgl` и т.п. — берём любой; внутри одной
-// версии игры (`1.278.0`) hash может меняться при горячих ребилдах ассетов —
-// поэтому в folder name складываем оба, чтобы каждый ребилд лежал отдельно.
+// platform может быть `an` (android), `webgl` и т.п. — берём любой. Сборку
+// идентифицирует ТРОЙКА version+manifest+hash: внутри одной версии игры вендор
+// бампает manifest (`v0020` → `v0024`), при этом hash может остаться прежним
+// (горячий ребилд без смены ассетов). Поэтому и в имени папки, и в сравнении
+// «сменилась ли сборка» участвуют все три компонента, а не один hash.
 const URL_PARTS_RE = /\/v\/[a-z0-9]+\/([0-9][0-9.]*)\/(v\d+)\/([a-f0-9]+)\//i;
 const SPLITLIB_RE     = /\/splitlib\.json\.zip(?:\?|$)/i;
 const TRANSLATION_RE  = /\/(ru|en)\.json\.gz(?:\?|$)/i;
@@ -448,6 +450,11 @@ const GAMEDATA_URL_PATTERNS = [
 
 const SEEN_URLS_MAX = 500;
 let detectedBuild = null; // { version, manifest, hash } — последняя замеченная сборка
+
+/** Стабильный ключ сборки из тройки version/manifest/hash. null-safe. */
+function buildKey(b) {
+    return b ? `${b.version}/${b.manifest}/${b.hash}` : null;
+}
 
 function initGameDataDumper() {
     if (!chrome.webRequest || !chrome.downloads) {
@@ -493,7 +500,10 @@ async function tryDumpGameData(url) {
     const partsMatch = URL_PARTS_RE.exec(url);
     if (partsMatch) {
         const fresh = { version: partsMatch[1], manifest: partsMatch[2], hash: partsMatch[3] };
-        if (!detectedBuild || detectedBuild.hash !== fresh.hash) {
+        // Идентичность сборки — по всем трём компонентам. Сравнивать по одному hash
+        // нельзя: вендор бампает manifest (`v0020` → `v0024`) не трогая hash, и тогда
+        // новая сборка маскируется под старую — её файлы сваливаются в чужую папку.
+        if (buildKey(detectedBuild) !== buildKey(fresh)) {
             detectedBuild = fresh;
             chrome.storage.local.set({ gamedataBuild: fresh });
         }
