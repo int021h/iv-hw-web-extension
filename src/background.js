@@ -136,8 +136,12 @@ async function flush() {
       // Шлём в каждый target параллельно. Считаем batch принятым если хотя бы один target ответил OK
       // (если localhost не запущен, но прод доступен — данные не теряются, реальная работа продолжается).
       const results = await Promise.allSettled(cfg.targets.map(async (t) => {
+        // credentials: 'include' — без него MV3 SW fetch на кросс-ориджин не аттачит
+        // hw_session куку, и бэк (HarIngestService) не публикует InventoryGet/HeroGetAll
+        // события, потому что не может атрибутировать данные владельцу.
         const res = await fetch(`${t.url}/api/hw/har/ingest`, {
           method: 'POST',
+          credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ playerId, calls })
         });
@@ -266,6 +270,17 @@ async function authExchange(playerId, clanInfoResponse) {
       authAt: new Date().toISOString()
     });
     console.log('[HW-EXT-BG] auth exchange ok:', data.user?.name, data.user?.guildRole);
+
+    // Кука только что установлена в jar — форс-флашим всё, что накопилось ДО /exchange.
+    // Без этого пре-auth батчи (включая первый inventoryGet/heroGetAll на cold-start
+    // игры) уехали бы по обычному 5-сек таймеру; а если бы flush сработал раньше
+    // /exchange (batch hit 30 → immediate flush), они бы вообще ушли без куки и бэк
+    // молча дропнул бы InventoryGet/HeroGetAll события.
+    if (flushTimer) {
+      clearTimeout(flushTimer);
+      flushTimer = null;
+    }
+    if (queue.length > 0) flush();
   }
 }
 
@@ -364,6 +379,7 @@ async function flushAssetQueue(cfg) {
     const results = await Promise.allSettled(cfg.targets.map(async (t) => {
         const res = await fetch(`${t.url}/api/hw/asset/seen`, {
             method: 'POST',
+            credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ items: batch })
         });
