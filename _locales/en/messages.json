@@ -58,5 +58,6 @@
   "rpc_userGetInfo":                    { "message": "Player profile" },
   "rpc_questGetAll":                    { "message": "Events: player quests" },
   "rpc_questGetEvents":                 { "message": "Events: list with runtime meta" },
+  "rpc_shopGet":                        { "message": "Events: event shops" },
   "rpc_remoteConfigInit":               { "message": "Events: chain config URLs" }
 }

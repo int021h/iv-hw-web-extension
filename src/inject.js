@@ -26,7 +26,10 @@
     // --- Events: квесты пользователя + remote-config URLs для CDN-чейнов ---
     'questGetAll',
     'questGetEvents',
-    'remoteConfigInit'
+    'remoteConfigInit',
+    // --- Эвент-магазины: ассортимент магазинов событий (shopId >= 1000000) ---
+    // По вызову на каждый shopId; бэк фильтрует эвентовые и копит снимки (event_shop).
+    'shopGet'
   ]);
 
   const log = (...a) => DEBUG && console.log('[HW-EXT]', ...a);

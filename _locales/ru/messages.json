@@ -58,5 +58,6 @@
   "rpc_userGetInfo":                    { "message": "Профиль игрока" },
   "rpc_questGetAll":                    { "message": "Эвенты: задачи игрока" },
   "rpc_questGetEvents":                 { "message": "Эвенты: список с runtime-метой" },
+  "rpc_shopGet":                        { "message": "Эвенты: магазины событий" },
   "rpc_remoteConfigInit":               { "message": "Эвенты: ссылки на цепочки" }
 }
