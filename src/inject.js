@@ -8,6 +8,12 @@
     'clanClash_getUserClanResult',
     'clanClash_getLaneBattle',
     'clanClash_getCurrentState',
+    // --- Глобальный Чемпионат ---
+    'clanWarChampInfo_getInfo',
+    'clanWarChampInfo_getBriefInfo',
+    'clanWarChampInfo_getAvailableHistory',
+    'clanWarChampInfo_getDayHistory',
+    'clanWarChampInfo_getSeason',
     'clanWarChampDefence_getDefence',
     // --- GW (Война Гильдий) ---
     'clanWarGetInfo',
