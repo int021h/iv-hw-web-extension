@@ -440,10 +440,11 @@ async function broadcastAssetToastToGameTabs(assetPaths) {
 // URL у вендора: /v/<platform>/<version>/v<manifest>/<hash>/<dir>/<file>
 // Пример: /v/an/1.278.0/v0046/53bc272ae7c0148f676a648993bf0aec/lib/splitlib.json.zip
 // platform может быть `an` (android), `webgl` и т.п. — берём любой. Сборку
-// идентифицирует ТРОЙКА version+manifest+hash: внутри одной версии игры вендор
-// бампает manifest (`v0020` → `v0024`), при этом hash может остаться прежним
-// (горячий ребилд без смены ассетов). Поэтому и в имени папки, и в сравнении
-// «сменилась ли сборка» участвуют все три компонента, а не один hash.
+// идентифицирует сборку ПАРА version+manifest: внутри одной версии игры вендор
+// бампает manifest (`v0020` → `v0024`) на каждую сборку. hash в URL различается
+// по файлу (свой content-hash у splitlib / ru / en / каждого remote-config), поэтому
+// в ИМЯ ПАПКИ он не входит — иначе файлы одной сборки разъезжаются по подпапкам.
+// В detectedBuild тройку (с hash) всё же храним — для дедупа по точному URL.
 const URL_PARTS_RE = /\/v\/[a-z0-9]+\/([0-9][0-9.]*)\/(v\d+)\/([a-f0-9]+)\//i;
 const SPLITLIB_RE     = /\/splitlib\.json\.zip(?:\?|$)/i;
 const TRANSLATION_RE  = /\/(ru|en)\.json\.gz(?:\?|$)/i;
@@ -462,6 +463,9 @@ const REMOTE_CFG_WANTED = new Set([
     // Имена ресурсов наград realm-эвентов (которых нет в game_reward_resource).
     'material', 'lootboxChanced', 'refillableResource', 'unit',
     'speedUpConstruction', 'speedUpResearch', 'speedUpUnitTraining', 'speedUpUniversal',
+    // «Путь героя» (Battle Pass): трек наград сезона + кампании. Расписание заданий и
+    // сезоны лежат в splitlib.zip, а трек — только тут (remoteConfigInit.index.configs).
+    'battlepass',
 ]);
 
 // Любой *.nextersglobal.com — чтобы поймать splitlib/translations независимо от того,
@@ -593,8 +597,15 @@ async function tryDumpGameData(url) {
         console.debug('[HW-EXT-BG] gamedata DEFERRED (build unknown):', url);
         return;
     }
-    const { version, manifest, hash } = detectedBuild;
-    const buildFolder = `${version}/${manifest}-${hash}`;
+    // Папка сборки — version+manifest БЕЗ hash. hash в URL различается ПО ФАЙЛУ
+    // (splitlib, ru.json.gz, en.json.gz, remote-config'и — у каждого свой content-hash
+    // в пределах одной сборки), поэтому если включать hash в имя папки, файлы одной
+    // сборки разъезжаются по разным подпапкам (`v0048-<hashA>` / `v0048-<hashB>`) и их
+    // приходится вручную сводить. manifest (`v0048`) бампается на каждую сборку игры —
+    // его достаточно как идентификатора. Тройка version+manifest+hash по-прежнему
+    // используется в detectedBuild для дедупа (URL несёт hash), но не в имени папки.
+    const { version, manifest } = detectedBuild;
+    const buildFolder = `${version}/${manifest}`;
 
     let folder, basename;
     if (isSplitlib) {
