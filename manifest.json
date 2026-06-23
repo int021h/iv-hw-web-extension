@@ -3,7 +3,7 @@
   "default_locale": "ru",
   "name": "__MSG_extName__",
   "description": "__MSG_extDesc__",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "icons": {
     "16": "icons/icon-16.png",
     "48": "icons/icon-48.png",
@@ -33,6 +33,8 @@
     {
       "matches": [
         "https://warden.pankov.dev/*",
+        "https://hw-warden.com/*",
+        "https://www.hw-warden.com/*",
         "http://localhost:3000/*"
       ],
       "js": ["src/marker.js"],
@@ -48,6 +50,7 @@
   "host_permissions": [
     "https://*.hero-wars-alliance.com/*",
     "https://*.pankov.dev/*",
+    "https://*.hw-warden.com/*",
     "https://*.nextersglobal.com/*",
     "http://localhost/*"
   ],

@@ -10,15 +10,23 @@
 // `localhost` cookie шлётся только на localhost-fetch'и, `.pankov.dev` cookie только на prod.
 // Это позволяет одной игровой сессии «прокармливать» и локалку (для тестирования), и прод
 // (чтобы реальные уведомления/обновления не страдали).
+// PROD: один и тот же бэкенд ms-hw доступен на двух API-хостах (warden-api.pankov.dev и
+// api.hw-warden.com) под двумя сайтами (warden.pankov.dev и hw-warden.com). /exchange делаем
+// ОДИН раз (на любой хост — бэк один), а полученный JWT кладём в куку ОБОИХ доменов: токен
+// валиден независимо от домена, так оба сайта авторизованы без двойного обращения к бэку и
+// без риска двойных side-effect'ов (upsert/уведомления при exchange).
 const PROD_TARGET = {
     url: 'https://warden-api.pankov.dev',
-    cookieDomain: '.pankov.dev',
-    cookieSecure: true,
+    cookies: [
+        { url: 'https://warden-api.pankov.dev/', domain: '.pankov.dev',  secure: true },
+        { url: 'https://api.hw-warden.com/',      domain: '.hw-warden.com', secure: true },
+    ],
 };
 const LOCAL_TARGET = {
     url: 'http://localhost:9102',
-    cookieDomain: 'localhost',
-    cookieSecure: false,
+    cookies: [
+        { url: 'http://localhost:9102/', domain: 'localhost', secure: false },
+    ],
 };
 let configPromise = null;
 function getConfig() {
@@ -223,21 +231,25 @@ async function authExchange(playerId, clanInfoResponse) {
     const data = await res.json();
 
     if (data.token) {
-      const cookie = await chrome.cookies.set({
-        url: `${target.url}/`,
-        name: 'hw_session',
-        value: data.token,
-        domain: target.cookieDomain,
-        path: '/',
-        httpOnly: true,
-        secure: target.cookieSecure,
-        sameSite: 'lax',
-        expirationDate: Math.floor(Date.now() / 1000) + 3600
-      });
-      if (cookie) {
-        console.log('[HW-EXT-BG] cookie установлена:', cookie.domain, '←', target.url);
-      } else {
-        console.warn('[HW-EXT-BG] chrome.cookies.set вернул null:', target.url, '— проверь host_permissions');
+      // Один токен → кука во все cookie-scope'ы цели (PROD: и .pankov.dev, и .hw-warden.com),
+      // чтобы оба сайта (warden.pankov.dev и hw-warden.com) подхватили сессию.
+      for (const scope of target.cookies) {
+        const cookie = await chrome.cookies.set({
+          url: scope.url,
+          name: 'hw_session',
+          value: data.token,
+          domain: scope.domain,
+          path: '/',
+          httpOnly: true,
+          secure: scope.secure,
+          sameSite: 'lax',
+          expirationDate: Math.floor(Date.now() / 1000) + 3600
+        });
+        if (cookie) {
+          console.log('[HW-EXT-BG] cookie установлена:', cookie.domain, '←', target.url);
+        } else {
+          console.warn('[HW-EXT-BG] chrome.cookies.set вернул null:', scope.url, '— проверь host_permissions');
+        }
       }
     }
     return data;

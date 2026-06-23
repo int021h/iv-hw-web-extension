@@ -1,4 +1,4 @@
-// Запускается на страницах Warden web-app (warden.pankov.dev / localhost:3000)
+// Запускается на страницах Warden web-app (hw-warden.com / warden.pankov.dev / localhost:3000)
 // на document_start. Ставит <meta name="warden-version" content="..."> в <head>,
 // чтобы страница логина по этому маркеру могла понять, что расширение установлено.
 //

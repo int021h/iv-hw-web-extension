@@ -1,6 +1,6 @@
 const $ = (id) => document.getElementById(id);
 
-const WARDEN_URL_PROD = 'https://warden.pankov.dev';
+const WARDEN_URL_PROD = 'https://hw-warden.com';
 const WARDEN_URL_DEV = 'http://localhost:3000';
 
 const ROLE_KEYS = {
