@@ -61,6 +61,7 @@
   "rpc_heroGetAll":                     { "message": "Heroes progress" },
   "rpc_titanGetAll":                    { "message": "Titans progress" },
   "rpc_userGetInfo":                    { "message": "Player profile" },
+  "rpc_heroGetSumPower":                { "message": "Player account power" },
   "rpc_questGetAll":                    { "message": "Events: player quests" },
   "rpc_questGetEvents":                 { "message": "Events: list with runtime meta" },
   "rpc_shopGet":                        { "message": "Events: event shops" },

@@ -29,6 +29,9 @@
     'heroGetAll',
     'titanGetAll',
     'userGetInfo',
+    // Полная мощь аккаунта участника (для /hw/progress «Мощь аккаунта»). Игра дёргает
+    // при открытии карточки участника; ловим пассивно (свой вызов подписать нельзя — подпись в wasm).
+    'heroGetSumPower',
     // --- Events: квесты пользователя + remote-config URLs для CDN-чейнов ---
     'questGetAll',
     'questGetEvents',

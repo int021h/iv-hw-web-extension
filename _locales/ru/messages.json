@@ -61,6 +61,7 @@
   "rpc_heroGetAll":                     { "message": "Прогресс героев" },
   "rpc_titanGetAll":                    { "message": "Прогресс титанов" },
   "rpc_userGetInfo":                    { "message": "Профиль игрока" },
+  "rpc_heroGetSumPower":                { "message": "Мощь аккаунта игрока" },
   "rpc_questGetAll":                    { "message": "Эвенты: задачи игрока" },
   "rpc_questGetEvents":                 { "message": "Эвенты: список с runtime-метой" },
   "rpc_shopGet":                        { "message": "Эвенты: магазины событий" },
