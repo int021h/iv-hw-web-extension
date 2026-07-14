@@ -10,16 +10,17 @@
 // `localhost` cookie шлётся только на localhost-fetch'и, `.pankov.dev` cookie только на prod.
 // Это позволяет одной игровой сессии «прокармливать» и локалку (для тестирования), и прод
 // (чтобы реальные уведомления/обновления не страдали).
-// PROD: один и тот же бэкенд ms-hw доступен на двух API-хостах (warden-api.pankov.dev и
-// api.hw-warden.com) под двумя сайтами (warden.pankov.dev и hw-warden.com). /exchange делаем
-// ОДИН раз (на любой хост — бэк один), а полученный JWT кладём в куку ОБОИХ доменов: токен
-// валиден независимо от домена, так оба сайта авторизованы без двойного обращения к бэку и
-// без риска двойных side-effect'ов (upsert/уведомления при exchange).
+// PROD: основной API-хост — api.hw-warden.com. Легаси-хост warden-api.pankov.dev ведёт на тот же
+// бэкенд ms-hw и доживает переходный период (пока все копии расширения не авто-обновятся) —
+// после чего будет погашен. /exchange делаем ОДИН раз (бэк один), а полученный JWT кладём в куку
+// ОБОИХ доменов: токен валиден независимо от домена, так и hw-warden.com, и легаси
+// warden.pankov.dev авторизованы без двойного обращения к бэку и без риска двойных
+// side-effect'ов (upsert/уведомления при exchange).
 const PROD_TARGET = {
-    url: 'https://warden-api.pankov.dev',
+    url: 'https://api.hw-warden.com',
     cookies: [
-        { url: 'https://warden-api.pankov.dev/', domain: '.pankov.dev',  secure: true },
-        { url: 'https://api.hw-warden.com/',      domain: '.hw-warden.com', secure: true },
+        { url: 'https://api.hw-warden.com/',     domain: '.hw-warden.com', secure: true },
+        { url: 'https://warden-api.pankov.dev/', domain: '.pankov.dev',    secure: true },
     ],
 };
 const LOCAL_TARGET = {
@@ -204,8 +205,8 @@ function scheduleFlush() {
 
 /**
  * При каждом перехваченном user_getClanInfo дёргаем /api/auth/exchange.
- * Backend апсертит пользователя/гильдию и ставит HttpOnly JWT-куку на .pankov.dev,
- * после чего web-client на hw.pankov.dev автоматически авторизован.
+ * Backend апсертит пользователя/гильдию и возвращает JWT, который кладётся в куку
+ * обоих сайтов (hw-warden.com + легаси warden.pankov.dev) — web-client сразу авторизован.
  * credentials: 'include' обязательно — иначе браузер не сохранит Set-Cookie в jar.
  */
 async function authExchange(playerId, clanInfoResponse) {
@@ -216,7 +217,7 @@ async function authExchange(playerId, clanInfoResponse) {
   // В Chrome MV3 fetch из service worker'а пишет Set-Cookie в изолированный partition,
   // недоступный веб-вкладкам. Поэтому ставим куку явно через chrome.cookies API — так она
   // попадёт в общий cookie jar браузера и будет отправляться при кросс-фетчах с web-страниц.
-  // Каждый target → своя кука в свой scope (`localhost` vs `.pankov.dev`), не конфликтуют.
+  // Каждый target → своя кука в свой scope (`localhost` vs `.hw-warden.com`), не конфликтуют.
   const results = await Promise.allSettled(cfg.targets.map(async (target) => {
     const res = await fetch(`${target.url}/api/auth/exchange`, {
       method: 'POST',
@@ -231,8 +232,8 @@ async function authExchange(playerId, clanInfoResponse) {
     const data = await res.json();
 
     if (data.token) {
-      // Один токен → кука во все cookie-scope'ы цели (PROD: и .pankov.dev, и .hw-warden.com),
-      // чтобы оба сайта (warden.pankov.dev и hw-warden.com) подхватили сессию.
+      // Один токен → кука во все cookie-scope'ы цели (PROD: и .hw-warden.com, и .pankov.dev),
+      // чтобы оба сайта (hw-warden.com и легаси warden.pankov.dev) подхватили сессию.
       for (const scope of target.cookies) {
         const cookie = await chrome.cookies.set({
           url: scope.url,

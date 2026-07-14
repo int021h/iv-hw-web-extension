@@ -106,8 +106,8 @@ async function showBackend() {
     isDev = info.installType === 'development';
   } catch { /* ignore — оставляем PROD по умолчанию */ }
   $('backend').textContent = isDev
-    ? 'localhost + warden-api.pankov.dev (DEV)'
-    : 'warden-api.pankov.dev';
+    ? 'localhost + api.hw-warden.com (DEV)'
+    : 'api.hw-warden.com';
   $('wardenLink').href = isDev ? WARDEN_URL_DEV : WARDEN_URL_PROD;
 }
 
