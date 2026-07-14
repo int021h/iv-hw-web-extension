@@ -489,6 +489,37 @@ const GAMEDATA_URL_PATTERNS = [
 ];
 
 const SEEN_URLS_MAX = 500;
+
+// Дедуп-ключи уже скачанных файлов — ОДИН разделяемый Set на всю жизнь SW.
+// Раньше каждый вызов tryDumpGameData читал свой storage-снапшот, дописывал свой
+// ключ и перезаписывал список целиком. При входе в игру listener срабатывает на
+// десяток URL почти одновременно: все вызовы стартовали от одного старого снапшота
+// и затирали записи друг друга — в storage выживал ключ последнего писателя, и при
+// следующем входе «уже скачанные» файлы качались заново.
+let seenUrlsPromise = null;
+function getSeenUrls() {
+    if (!seenUrlsPromise) {
+        seenUrlsPromise = chrome.storage.local.get('gamedataSeenUrls')
+            .then(({ gamedataSeenUrls }) => new Set(gamedataSeenUrls || []));
+    }
+    return seenUrlsPromise;
+}
+
+// Запись сериализована цепочкой: параллельные storage.set() могут завершиться не по
+// порядку, и более старый снапшот затёр бы более новый. Снапшот Set'а берётся внутри
+// цепочки — каждый write видит все добавления, сделанные к его моменту.
+let persistSeenChain = Promise.resolve();
+function persistSeenUrls(seen) {
+    persistSeenChain = persistSeenChain
+        .then(() => {
+            const arr = Array.from(seen);
+            const trimmed = arr.length > SEEN_URLS_MAX ? arr.slice(arr.length - SEEN_URLS_MAX) : arr;
+            return chrome.storage.local.set({ gamedataSeenUrls: trimmed });
+        })
+        .catch(e => console.warn('[HW-EXT-BG] persist gamedataSeenUrls failed:', e.message));
+    return persistSeenChain;
+}
+
 let detectedBuild = null; // { version, manifest, hash } — последняя замеченная сборка
 
 /** Стабильный ключ сборки из тройки version/manifest/hash. null-safe. */
@@ -582,8 +613,7 @@ async function tryDumpGameData(url) {
         return;
     }
 
-    const { gamedataSeenUrls } = await chrome.storage.local.get('gamedataSeenUrls');
-    const seen = new Set(gamedataSeenUrls || []);
+    const seen = await getSeenUrls();
     // Дедуп НЕ по одному url: см. dedupKey ниже — иначе version-стабильный remote-config
     // (его URL без версии, только content-hash) скачается лишь однажды и не попадёт в папки
     // последующих сборок игры.
@@ -640,6 +670,10 @@ async function tryDumpGameData(url) {
     // одной сборки тот же файл повторно не качается.
     const dedupKey = `${filename}|${url}`;
     if (seen.has(dedupKey)) return;
+    // Помечаем ДО download: тот же URL может прийти параллельно из пассивного
+    // webRequest-листенера и активной выгрузки remoteConfigInit — второй вызов
+    // должен увидеть ключ до того, как первый докачает. При ошибке ключ снимаем.
+    seen.add(dedupKey);
     try {
         const downloadId = await chrome.downloads.download({
             url,
@@ -647,7 +681,6 @@ async function tryDumpGameData(url) {
             saveAs: false,
             conflictAction: 'overwrite'
         });
-        seen.add(dedupKey);
         console.log('[HW-EXT-BG] gamedata dumped:', filename, 'id=', downloadId);
 
         // Зеркальная локаль: при перехвате ru.json.gz сразу качаем en.json.gz
@@ -659,6 +692,7 @@ async function tryDumpGameData(url) {
             const otherFilename = `HW/data/${buildFolder}/${otherLang}.json.gz`;
             const otherKey = `${otherFilename}|${otherUrl}`;
             if (otherUrl !== url && !seen.has(otherKey)) {
+                seen.add(otherKey);
                 try {
                     await chrome.downloads.download({
                         url: otherUrl,
@@ -666,20 +700,19 @@ async function tryDumpGameData(url) {
                         saveAs: false,
                         conflictAction: 'overwrite'
                     });
-                    seen.add(otherKey);
                     console.log('[HW-EXT-BG] mirror locale dumped:', otherFilename);
                 } catch (e) {
+                    seen.delete(otherKey);
                     console.warn('[HW-EXT-BG] mirror download failed:', otherFilename, '→', e.message);
                 }
             }
         }
-
-        const arr = Array.from(seen);
-        const trimmed = arr.length > SEEN_URLS_MAX ? arr.slice(arr.length - SEEN_URLS_MAX) : arr;
-        await chrome.storage.local.set({ gamedataSeenUrls: trimmed });
     } catch (e) {
+        seen.delete(dedupKey);
         console.warn('[HW-EXT-BG] download failed:', filename, '→', e.message);
+        return;
     }
+    await persistSeenUrls(seen);
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
