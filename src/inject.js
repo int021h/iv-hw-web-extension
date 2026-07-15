@@ -38,7 +38,12 @@
     'remoteConfigInit',
     // --- Эвент-магазины: ассортимент магазинов событий (shopId >= 1000000) ---
     // По вызову на каждый shopId; бэк фильтрует эвентовые и копит снимки (event_shop).
-    'shopGet'
+    'shopGet',
+    // --- Арена: соперники из поиска и лог боёв ---
+    // battleGetByType — общий метод логов; бэк обрабатывает только args.type === 'arena'.
+    'arenaFindEnemies',
+    'battleGetByType',
+    'customArena_endBattle'
   ]);
 
   const log = (...a) => DEBUG && console.log('[HW-EXT]', ...a);

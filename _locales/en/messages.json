@@ -65,5 +65,8 @@
   "rpc_questGetAll":                    { "message": "Events: player quests" },
   "rpc_questGetEvents":                 { "message": "Events: list with runtime meta" },
   "rpc_shopGet":                        { "message": "Events: event shops" },
-  "rpc_remoteConfigInit":               { "message": "Events: chain config URLs" }
+  "rpc_remoteConfigInit":               { "message": "Events: chain config URLs" },
+  "rpc_arenaFindEnemies":               { "message": "Arena: opponents from search" },
+  "rpc_battleGetByType":                { "message": "Arena: battle log" },
+  "rpc_customArena_endBattle":          { "message": "Arena: battle result" }
 }
