@@ -36,6 +36,11 @@
     'questGetAll',
     'questGetEvents',
     'remoteConfigInit',
+    // --- Сезонные эвенты «Царства» (liveOps-механика specialQuest) ---
+    // На случай если вендор заведёт их и как HTTP-RPC; сейчас они приходят по MQTT
+    // (см. MQTT_TYPES ниже) — имена методов вытащены из строк клиента.
+    'specialQuestInit',
+    'specialQuestEvents',
     // --- Эвент-магазины: ассортимент магазинов событий (shopId >= 1000000) ---
     // По вызову на каждый shopId; бэк фильтрует эвентовые и копит снимки (event_shop).
     'shopGet',
@@ -208,5 +213,108 @@
     return origSend.apply(this, arguments);
   };
 
-  log('fetch/XHR interception installed');
+  // ===========================================================================
+  // MQTT (WebSocket) — сезонные эвенты
+  // ===========================================================================
+  // Игра держит MQTT-соединение с `wss://emqx-hwmb-wss.nextersglobal.com/mqtt`
+  // (paho-mqtt) и шлёт в него push'и по топикам `hwm/user/<id>`, `hwm/pub/clan/<id>`
+  // и др. С 2026-07-16 вендор УБРАЛ конфиги specialQuestEvent/specialQuestGroup из
+  // индекса remoteConfigInit — расписание тиров и состав вкладок сезонных эвентов
+  // теперь приходят ТОЛЬКО сюда, сообщением `{"result":{"type":"specialQuestEvents",
+  // "body":{"events":[{id,start,end,viewId,groups:[{id,repeatType,localeKey,quests}]}]}}}`.
+  // Это ещё и авторитетнее конфига: repeatType живой (в снимке конфига вкладки арены
+  // помечены Repeatable, а в игре они single).
+  //
+  // Забираем только whitelist'нутые типы: топики global-map сыплют сотни
+  // mapChunksUpdated в минуту — их ловить незачем.
+  const MQTT_TYPES = new Set(['specialQuestEvents']);
+
+  /**
+   * Разбирает MQTT-пакеты из бинарного фрейма и возвращает payload'ы PUBLISH'ей.
+   * Формат: [1 байт type/flags][remaining length varint][2 байта длины топика][топик]
+   * [2 байта packet id — только при QoS>0][payload]. В одном WS-фрейме пакетов
+   * может быть несколько подряд.
+   */
+  function parseMqttPublishes(buf) {
+    const out = [];
+    const b = new Uint8Array(buf);
+    let pos = 0;
+    while (pos + 2 <= b.length) {
+      const header = b[pos];
+      const packetType = header >> 4;
+      let mult = 1, remaining = 0, q = pos + 1;
+      while (q < b.length) {
+        const enc = b[q++];
+        remaining += (enc & 127) * mult;
+        mult *= 128;
+        if ((enc & 128) === 0) break;
+        if (mult > 128 * 128 * 128) return out; // битый varint — дальше не парсим
+      }
+      const bodyEnd = q + remaining;
+      if (bodyEnd > b.length) break;
+      if (packetType === 3 && remaining > 2) {
+        const topicLen = (b[q] << 8) | b[q + 1];
+        let p = q + 2 + topicLen;
+        if ((header >> 1) & 3) p += 2; // packet id при QoS 1/2
+        const topic = new TextDecoder('utf-8').decode(b.subarray(q + 2, q + 2 + topicLen));
+        const payload = new TextDecoder('utf-8').decode(b.subarray(p, bodyEnd));
+        out.push({ topic, payload });
+      }
+      pos = bodyEnd;
+    }
+    return out;
+  }
+
+  /** Отдаёт push бэкенду как обычный «вызов» — метод = тип сообщения. */
+  function handleMqttFrame(data) {
+    let buf = null;
+    if (data instanceof ArrayBuffer) buf = data;
+    else if (ArrayBuffer.isView(data)) buf = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+    else return; // текстовые фреймы MQTT не использует
+    let publishes;
+    try { publishes = parseMqttPublishes(buf); } catch (e) { return; }
+    for (const { topic, payload } of publishes) {
+      if (payload.indexOf('specialQuest') < 0) continue; // дешёвый фильтр до JSON.parse
+      let msg;
+      try { msg = JSON.parse(payload); } catch { continue; }
+      const result = msg && msg.result;
+      const type = result && result.type;
+      if (!type || !MQTT_TYPES.has(type)) continue;
+      const body = result.body || null;
+      const playerId = body && body.pushUserId != null ? String(body.pushUserId) : null;
+      log('MQTT capture:', type, 'topic:', topic);
+      postCaptured({
+        playerId,
+        calls: [{
+          method: type,
+          requestArgs: { transport: 'mqtt', topic },
+          response: body,
+          requestIdent: null,
+          calledAt: new Date().toISOString()
+        }]
+      });
+    }
+  }
+
+  const OrigWebSocket = window.WebSocket;
+  if (OrigWebSocket) {
+    const WrappedWebSocket = function(url, protocols) {
+      const ws = protocols === undefined ? new OrigWebSocket(url) : new OrigWebSocket(url, protocols);
+      try {
+        // Слушаем на самом сокете: paho вешает свой onmessage, а addEventListener
+        // работает параллельно и не мешает игре (мы только читаем).
+        ws.addEventListener('message', (ev) => {
+          try { handleMqttFrame(ev.data); } catch (e) { warn('MQTT capture failed:', e); }
+        });
+      } catch (e) {
+        warn('WebSocket hook failed:', e);
+      }
+      return ws;
+    };
+    WrappedWebSocket.prototype = OrigWebSocket.prototype;
+    for (const k of ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED']) WrappedWebSocket[k] = OrigWebSocket[k];
+    window.WebSocket = WrappedWebSocket;
+  }
+
+  log('fetch/XHR/WebSocket interception installed');
 })();
