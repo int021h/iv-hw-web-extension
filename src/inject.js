@@ -48,11 +48,39 @@
     // battleGetByType — общий метод логов; бэк обрабатывает только args.type === 'arena'.
     'arenaFindEnemies',
     'battleGetByType',
-    'customArena_endBattle'
+    'customArena_endBattle',
+    // --- Аккаунт-уровневые усиления для Калькулятора ---
+    // Приходят одним батчем на холодном старте игры, поэтому обновляются раз за сессию.
+    // rune_getAll    — classRunes: уровень классовой рунной сферы и вклад каждого героя
+    //                  (heroesRunes из того же ответа дублирует heroGetAll.hero_runes);
+    // set_getAll     — уровни комплектации наборов;
+    // getHeroSummary — squadHeroSkills: уровни умений «Царства». Имя обобщённое, в том же
+    //                  батче есть getSummary/getUnitSummary/getResidentSummary соседних
+    //                  подсистем — их НЕ забираем.
+    'rune_getAll',
+    'set_getAll',
+    'getHeroSummary'
+    // getSummary в этот список НЕ входит: он обрабатывается отдельно в resolveMethod()
+    // и уходит на бэк как research_getSummary — см. комментарий там.
   ]);
 
   const log = (...a) => DEBUG && console.log('[HW-EXT]', ...a);
   const warn = (...a) => console.warn('[HW-EXT]', ...a);
+
+  // `getSummary` — обобщённое имя: в одном батче его вызывают четыре подсистемы Царства
+  // (бонусы, производства, исследования, постройки) с одинаковыми args `{}` и одним URL.
+  // Различить их можно только по форме ответа. Нужны исследования (`completedResearches`) —
+  // их пересылаем под отдельным синтетическим именем, чтобы на бэке был свой ключ дедупа
+  // `(method, args, scope)`: иначе все четыре схлопнулись бы в одну строку и затирали друг друга.
+  // Остальные getSummary не отправляем вовсе.
+  const RESEARCH_METHOD = 'research_getSummary';
+
+  function resolveMethod(name, response) {
+    if (name === 'getSummary') {
+      return response && response.completedResearches ? RESEARCH_METHOD : null;
+    }
+    return ALLOWED_METHODS.has(name) ? name : null;
+  }
 
   function shouldIntercept(url) {
     if (!url) return false;
@@ -115,14 +143,20 @@
     const calledAt = new Date().toISOString();
 
     const filtered = calls
-      .filter(c => c && ALLOWED_METHODS.has(c.name))
-      .map(c => ({
-        method: c.name,
-        requestArgs: c.args != null ? c.args : null,
-        response: responseMap[c.ident] != null ? responseMap[c.ident] : null,
-        requestIdent: c.ident || null,
-        calledAt
-      }));
+      .map(c => {
+        if (!c) return null;
+        const resp = responseMap[c.ident] != null ? responseMap[c.ident] : null;
+        const method = resolveMethod(c.name, resp);
+        if (!method) return null;
+        return {
+          method,
+          requestArgs: c.args != null ? c.args : null,
+          response: resp,
+          requestIdent: c.ident || null,
+          calledAt
+        };
+      })
+      .filter(Boolean);
 
     log('matched MVP methods:', filtered.length, '/', calls.length, 'playerId:', playerId);
 

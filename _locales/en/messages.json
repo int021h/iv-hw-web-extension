@@ -70,5 +70,9 @@
   "rpc_specialQuestEvents":             { "message": "Events: seasonal (tabs)" },
   "rpc_arenaFindEnemies":               { "message": "Arena: opponents from search" },
   "rpc_battleGetByType":                { "message": "Arena: battle log" },
-  "rpc_customArena_endBattle":          { "message": "Arena: battle result" }
+  "rpc_customArena_endBattle":          { "message": "Arena: battle result" },
+  "rpc_rune_getAll":                    { "message": "Calculator: class rune spheres" },
+  "rpc_set_getAll":                     { "message": "Calculator: kits" },
+  "rpc_getHeroSummary":                 { "message": "Calculator: Realm skills" },
+  "rpc_research_getSummary":            { "message": "Calculator: research" }
 }

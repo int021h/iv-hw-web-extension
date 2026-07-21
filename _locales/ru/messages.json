@@ -70,5 +70,9 @@
   "rpc_specialQuestEvents":             { "message": "Эвенты: сезонные (вкладки)" },
   "rpc_arenaFindEnemies":               { "message": "Арена: соперники из поиска" },
   "rpc_battleGetByType":                { "message": "Арена: лог боёв" },
-  "rpc_customArena_endBattle":          { "message": "Арена: результат боя" }
+  "rpc_customArena_endBattle":          { "message": "Арена: результат боя" },
+  "rpc_rune_getAll":                    { "message": "Калькулятор: классовые сферы" },
+  "rpc_set_getAll":                     { "message": "Калькулятор: наборы" },
+  "rpc_getHeroSummary":                 { "message": "Калькулятор: умения Царства" },
+  "rpc_research_getSummary":            { "message": "Калькулятор: технологии" }
 }
