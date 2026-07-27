@@ -64,8 +64,12 @@
     // и уходит на бэк как research_getSummary — см. комментарий там.
   ]);
 
-  const log = (...a) => DEBUG && console.log('[HW-EXT]', ...a);
-  const warn = (...a) => console.warn('[HW-EXT]', ...a);
+  // Нативные console-методы захватываем на document_start: игра позже подменяет
+  // console.log заглушкой, и динамический lookup писал бы в пустоту.
+  const nativeLog = console.log.bind(console);
+  const nativeWarn = console.warn.bind(console);
+  const log = (...a) => DEBUG && nativeLog('[HW-EXT]', ...a);
+  const warn = (...a) => nativeWarn('[HW-EXT]', ...a);
 
   // `getSummary` — обобщённое имя: в одном батче его вызывают четыре подсистемы Царства
   // (бонусы, производства, исследования, постройки) с одинаковыми args `{}` и одним URL.
