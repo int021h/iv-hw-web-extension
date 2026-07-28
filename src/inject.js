@@ -51,14 +51,17 @@
     'customArena_endBattle',
     // --- Аккаунт-уровневые усиления для Калькулятора ---
     // Приходят одним батчем на холодном старте игры, поэтому обновляются раз за сессию.
-    // rune_getAll    — classRunes: уровень классовой рунной сферы и вклад каждого героя
-    //                  (heroesRunes из того же ответа дублирует heroGetAll.hero_runes);
-    // set_getAll     — уровни комплектации наборов;
-    // getHeroSummary — squadHeroSkills: уровни умений «Царства». Имя обобщённое, в том же
-    //                  батче есть getSummary/getUnitSummary/getResidentSummary соседних
-    //                  подсистем — их НЕ забираем.
+    // rune_getAll      — classRunes: уровень классовой рунной сферы и вклад каждого героя
+    //                    (heroesRunes из того же ответа дублирует heroGetAll.hero_runes);
+    // set_getAll       — уровни комплектации наборов;
+    // talisman_getAll  — ВСЕ талисманы всех героев, включая неодетые (в heroGetAll приходит
+    //                    только надетый) — для «Статистики для переброски» калькулятора;
+    // getHeroSummary   — squadHeroSkills: уровни умений «Царства». Имя обобщённое, в том же
+    //                    батче есть getSummary/getUnitSummary/getResidentSummary соседних
+    //                    подсистем — их НЕ забираем.
     'rune_getAll',
     'set_getAll',
+    'talisman_getAll',
     'getHeroSummary'
     // getSummary в этот список НЕ входит: он обрабатывается отдельно в resolveMethod()
     // и уходит на бэк как research_getSummary — см. комментарий там.
