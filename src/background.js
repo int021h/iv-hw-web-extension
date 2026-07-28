@@ -204,6 +204,20 @@ function scheduleFlush() {
 }
 
 /**
+ * exp (unix-секунды) из payload'а JWT — чтобы срок куки совпадал со сроком токена,
+ * какой бы TTL ни настроил бэкенд. null, если токен не разобрался.
+ */
+function jwtExpirationSeconds(token) {
+  try {
+    const payload = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    const exp = JSON.parse(atob(payload)).exp;
+    return Number.isFinite(exp) ? exp : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
  * При каждом перехваченном user_getClanInfo дёргаем /api/auth/exchange.
  * Backend апсертит пользователя/гильдию и возвращает JWT, который кладётся в куку
  * обоих сайтов (hw-warden.com + легаси warden.pankov.dev) — web-client сразу авторизован.
@@ -244,7 +258,10 @@ async function authExchange(playerId, clanInfoResponse) {
           httpOnly: true,
           secure: scope.secure,
           sameSite: 'lax',
-          expirationDate: Math.floor(Date.now() / 1000) + 3600
+          // Срок куки = exp самого JWT: бэк выдаёт токен на 30 дней и скользяще
+          // продлевает куку своими ответами (JwtCookieFilter). Захардкоженный здесь
+          // час перебивал серверный TTL и убивал сессию сайта после каждого захода в игру.
+          expirationDate: jwtExpirationSeconds(data.token) ?? Math.floor(Date.now() / 1000) + 30 * 24 * 3600
         });
         if (cookie) {
           console.log('[HW-EXT-BG] cookie установлена:', cookie.domain, '←', target.url);
