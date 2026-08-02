@@ -469,12 +469,15 @@ async function broadcastAssetToastToGameTabs(assetPaths) {
 
 // URL у вендора: /v/<platform>/<version>/v<manifest>/<hash>/<dir>/<file>
 // Пример: /v/an/1.278.0/v0046/53bc272ae7c0148f676a648993bf0aec/lib/splitlib.json.zip
-// platform может быть `an` (android), `webgl` и т.п. — берём любой. Сборку
-// идентифицирует сборку ПАРА version+manifest: внутри одной версии игры вендор
-// бампает manifest (`v0020` → `v0024`) на каждую сборку. hash в URL различается
-// по файлу (свой content-hash у splitlib / ru / en / каждого remote-config), поэтому
-// в ИМЯ ПАПКИ он не входит — иначе файлы одной сборки разъезжаются по подпапкам.
-// В detectedBuild тройку (с hash) всё же храним — для дедупа по точному URL.
+// platform может быть `an` (android), `webgl` и т.п. — берём любой.
+// ВАЖНО: v<manifest> в пути — это НЕ номер текущей сборки, а номер сборки, в которой
+// ЭТОТ файл последний раз менялся (та же схема, что у картинок под вечным `v0001`).
+// Не менявшиеся файлы (типично ru/en.json.gz) игра и на свежей сборке запрашивает
+// со старым vNNNN. Текущую сборку задаёт splitlib.json.zip — он меняется каждую
+// сборку и приходит первым, поэтому detectedBuild двигается только ВПЕРЁД
+// (см. buildIsNewer): отставший manifest перевода не откатывает папку.
+// hash в URL различается по файлу (свой content-hash у splitlib / ru / en / каждого
+// remote-config), поэтому ни в имя папки, ни в сравнение сборок он не входит.
 const URL_PARTS_RE = /\/v\/[a-z0-9]+\/([0-9][0-9.]*)\/(v\d+)\/([a-f0-9]+)\//i;
 const SPLITLIB_RE     = /\/splitlib\.json\.zip(?:\?|$)/i;
 const TRANSLATION_RE  = /\/(ru|en)\.json\.gz(?:\?|$)/i;
@@ -538,11 +541,25 @@ function persistSeenUrls(seen) {
     return persistSeenChain;
 }
 
-let detectedBuild = null; // { version, manifest, hash } — последняя замеченная сборка
+let detectedBuild = null; // { version, manifest, hash } — самая свежая замеченная сборка
 
-/** Стабильный ключ сборки из тройки version/manifest/hash. null-safe. */
-function buildKey(b) {
-    return b ? `${b.version}/${b.manifest}/${b.hash}` : null;
+/**
+ * true, если сборка `fresh` строго новее `current` (или current ещё нет).
+ * version сравнивается по числовым сегментам (`1.285.0`), при равенстве —
+ * manifest числом (`v0067` > `v0059`). hash не участвует: он свой у каждого файла.
+ */
+function buildIsNewer(fresh, current) {
+    if (!current) return true;
+    if (fresh.version !== current.version) {
+        const fa = fresh.version.split('.').map(Number);
+        const ca = current.version.split('.').map(Number);
+        for (let i = 0; i < Math.max(fa.length, ca.length); i++) {
+            const d = (fa[i] || 0) - (ca[i] || 0);
+            if (d !== 0) return d > 0;
+        }
+        return false;
+    }
+    return parseInt(fresh.manifest.slice(1), 10) > parseInt(current.manifest.slice(1), 10);
 }
 
 // Активна ли DEV-выгрузка (отработал initGameDataDumper). rpc-capture-листенер
@@ -600,8 +617,12 @@ function initGameDataDumper() {
         console.warn('[HW-EXT-BG] webRequest/downloads API недоступен, gamedata dumper выключен');
         return;
     }
+    // Тоже через buildIsNewer: get() асинхронный, и к моменту его резолва ранний
+    // webRequest-event мог уже определить более свежую сборку — не затирать её.
     chrome.storage.local.get('gamedataBuild').then(({ gamedataBuild }) => {
-        if (gamedataBuild) detectedBuild = gamedataBuild;
+        if (gamedataBuild && buildIsNewer(gamedataBuild, detectedBuild)) {
+            detectedBuild = gamedataBuild;
+        }
     });
     chrome.webRequest.onBeforeRequest.addListener(
         (details) => {
@@ -639,10 +660,11 @@ async function tryDumpGameData(url) {
     const partsMatch = URL_PARTS_RE.exec(url);
     if (partsMatch) {
         const fresh = { version: partsMatch[1], manifest: partsMatch[2], hash: partsMatch[3] };
-        // Идентичность сборки — по всем трём компонентам. Сравнивать по одному hash
-        // нельзя: вендор бампает manifest (`v0020` → `v0024`) не трогая hash, и тогда
-        // новая сборка маскируется под старую — её файлы сваливаются в чужую папку.
-        if (buildKey(detectedBuild) !== buildKey(fresh)) {
+        // Только ВПЕРЁД: manifest в URL — сборка последнего изменения ФАЙЛА, а не текущая.
+        // Не менявшийся ru/en.json.gz приходит со старым vNNNN — раньше он откатывал
+        // detectedBuild, уезжал в старую папку сам (и его приходилось переносить в папку
+        // импорта руками) и утаскивал туда же remote-config'и, у чьих URL версии нет.
+        if (buildIsNewer(fresh, detectedBuild)) {
             detectedBuild = fresh;
             chrome.storage.local.set({ gamedataBuild: fresh });
         }
