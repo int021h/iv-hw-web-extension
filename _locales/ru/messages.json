@@ -65,6 +65,7 @@
   "rpc_questGetAll":                    { "message": "Эвенты: задачи игрока" },
   "rpc_questGetEvents":                 { "message": "Эвенты: список с runtime-метой" },
   "rpc_shopGet":                        { "message": "Эвенты: магазины событий" },
+  "rpc_shopGetMany":                    { "message": "Эвенты: магазины событий (батч)" },
   "rpc_remoteConfigInit":               { "message": "Эвенты: ссылки на цепочки" },
   "rpc_specialQuestInit":               { "message": "Эвенты: сезонные (расписание)" },
   "rpc_specialQuestEvents":             { "message": "Эвенты: сезонные (вкладки)" },

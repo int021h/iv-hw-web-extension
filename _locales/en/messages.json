@@ -65,6 +65,7 @@
   "rpc_questGetAll":                    { "message": "Events: player quests" },
   "rpc_questGetEvents":                 { "message": "Events: list with runtime meta" },
   "rpc_shopGet":                        { "message": "Events: event shops" },
+  "rpc_shopGetMany":                    { "message": "Events: event shops (batch)" },
   "rpc_remoteConfigInit":               { "message": "Events: chain config URLs" },
   "rpc_specialQuestInit":               { "message": "Events: seasonal (schedule)" },
   "rpc_specialQuestEvents":             { "message": "Events: seasonal (tabs)" },
