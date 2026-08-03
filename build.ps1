@@ -71,7 +71,8 @@ try {
         Write-Host "  убрано из host_permissions для prod-сборки: $($stripped -join ', ')" -ForegroundColor DarkGray
     }
 
-    $devOnlyPerms = @('webRequest', 'downloads')
+    # `alarms` — ретрай недоставленных asset/seen батчей, живёт только в DEV asset collector'е.
+    $devOnlyPerms = @('webRequest', 'downloads', 'alarms')
     $permsKept     = @($prodManifest.permissions | Where-Object { $devOnlyPerms -notcontains $_ })
     $permsStripped = @($prodManifest.permissions | Where-Object { $devOnlyPerms -contains $_ })
     $prodManifest.permissions = $permsKept

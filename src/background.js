@@ -65,7 +65,12 @@ let flushing = false;
     // CDN-icon collector — DEV-only. В prod-сборку host_permission и `webRequest`
     // permission вырезается build.ps1, поэтому регистрировать listener бессмысленно
     // (а попытка вызвать chrome.webRequest без разрешения тихо падает).
-    if (cfg.isDev) initAssetUrlCollector(cfg);
+    if (cfg.isDev) {
+        initAssetUrlCollector(cfg);
+        // Недоставленные asset/seen с прошлой жизни SW — допинать сразу при старте
+        // (alarm мог не дожить до рестарта браузера, storage-очередь — доживает).
+        flushAssetQueue(cfg);
+    }
     if (cfg.isDev) initGameDataDumper();
   } catch { /* ignore */ }
 })();
@@ -364,9 +369,21 @@ const ASSET_FLUSH_MS = 10000;
 const ASSET_BATCH_SIZE = 50;
 const ASSET_MAX_QUEUE = 500;
 
-const assetSeen = new Set(); // assetPath, дедуп в рамках жизни SW
+// Per-target очередь недоставленного. Провал POST'а на конкретный target (деплой прода,
+// сеть, 429) раньше терял батч для него НАВСЕГДА: «успех» считался по любому target'у,
+// а in-memory дедуп assetSeen не давал повторного захвата — игра кэширует .img и может
+// больше никогда его не скачать. Теперь недоставленное копится в chrome.storage.local
+// (переживает выгрузку SW) и допинывается alarm'ом / при старте SW.
+const ASSET_PENDING_KEY = 'assetPendingByTarget'; // { [targetUrl]: [{assetPath, assetUrl}] }
+const ASSET_PENDING_MAX = 2000;   // на target; при переполнении вытесняется старое с головы
+const ASSET_POST_CHUNK = 400;     // сервер (bulkUpsertSafe) молча режет батч по 500 — шлём меньшими кусками
+const ASSET_RETRY_ALARM = 'hw-asset-retry';
+const ASSET_RETRY_DELAY_MIN = 1;
+
+const assetSeen = new Set(); // assetPath, дедуп захвата в рамках жизни SW
 let assetQueue = [];
 let assetTimer = null;
+let assetFlushing = false;   // storage read-modify-write — параллельные flush'и клобберят pending
 
 function initAssetUrlCollector(cfg) {
     if (!chrome.webRequest || !chrome.webRequest.onBeforeRequest) {
@@ -401,28 +418,97 @@ function scheduleAssetFlush(cfg) {
     assetTimer = setTimeout(() => { assetTimer = null; flushAssetQueue(cfg); }, ASSET_FLUSH_MS);
 }
 
-async function flushAssetQueue(cfg) {
-    if (assetQueue.length === 0) return;
-    const batch = assetQueue.splice(0, assetQueue.length);
-    // Шлём в каждый target параллельно, успех = хотя бы один OK. Endpoint PUBLIC,
-    // но валидируется на сервере (allowed prefixes, лимиты) — мусор отбрасывается молча.
-    const results = await Promise.allSettled(cfg.targets.map(async (t) => {
-        const res = await fetch(`${t.url}/api/hw/asset/seen`, {
-            method: 'POST',
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ items: batch })
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    }));
-    const anyOk = results.some(r => r.status === 'fulfilled');
-    if (anyOk) {
-        const paths = batch.map(b => b.assetPath).filter(Boolean);
-        if (paths.length > 0) broadcastAssetToastToGameTabs(paths);
-        console.log('[HW-EXT-BG] asset/seen ok, batch=', batch.length);
-    } else {
-        console.warn('[HW-EXT-BG] asset/seen failed для всех targets, batch=', batch.length);
+/**
+ * Отправляет items на один target кусками по [ASSET_POST_CHUNK]. Возвращает число
+ * доставленных элементов с начала списка (== items.length если всё ушло) — хвост
+ * начиная с первого недоставленного куска вызывающий кладёт в pending.
+ */
+async function postAssetItems(targetUrl, items) {
+    for (let i = 0; i < items.length; i += ASSET_POST_CHUNK) {
+        const chunk = items.slice(i, i + ASSET_POST_CHUNK);
+        try {
+            const res = await fetch(`${targetUrl}/api/hw/asset/seen`, {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ items: chunk })
+            });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        } catch (e) {
+            console.warn('[HW-EXT-BG] asset/seen failed →', targetUrl,
+                `(доставлено ${i}/${items.length}, ретрай через ${ASSET_RETRY_DELAY_MIN} мин):`, e.message);
+            return i;
+        }
     }
+    return items.length;
+}
+
+/**
+ * Шлёт свежий батч + недоставленные остатки прошлых попыток В КАЖДЫЙ target независимо.
+ * Провал одного target'а не влияет на другой: его порция сохраняется в storage и
+ * повторяется alarm'ом. Endpoint PUBLIC, но валидируется на сервере (allowed prefixes,
+ * лимиты) — мусор отбрасывается молча.
+ */
+async function flushAssetQueue(cfg) {
+    if (assetFlushing) { scheduleAssetFlush(cfg); return; }
+    assetFlushing = true;
+    try {
+        const batch = assetQueue.splice(0, assetQueue.length);
+        const { [ASSET_PENDING_KEY]: stored } = await chrome.storage.local.get(ASSET_PENDING_KEY);
+        const pending = stored || {};
+        let anyOkForBatch = false;
+        let havePending = false;
+
+        for (const t of cfg.targets) {
+            // pending прошлых попыток + свежий батч, дедуп по assetPath с сохранением порядка.
+            const merged = new Map();
+            for (const it of (pending[t.url] || [])) merged.set(it.assetPath, it);
+            for (const it of batch) merged.set(it.assetPath, it);
+            let items = [...merged.values()];
+            if (items.length > ASSET_PENDING_MAX) items = items.slice(items.length - ASSET_PENDING_MAX);
+            if (items.length === 0) { delete pending[t.url]; continue; }
+
+            const delivered = await postAssetItems(t.url, items);
+            if (delivered >= items.length) {
+                delete pending[t.url];
+                if (batch.length > 0) anyOkForBatch = true;
+                console.log('[HW-EXT-BG] asset/seen ok →', t.url, 'items=', items.length);
+            } else {
+                pending[t.url] = items.slice(delivered);
+                havePending = true;
+            }
+        }
+
+        await chrome.storage.local.set({ [ASSET_PENDING_KEY]: pending });
+        // chrome.alarms есть только в DEV-сборке (build.ps1 вырезает permission для CWS);
+        // без него ретрай сработает при следующем flush'е или старте SW.
+        if (chrome.alarms) {
+            if (havePending) {
+                chrome.alarms.create(ASSET_RETRY_ALARM, { delayInMinutes: ASSET_RETRY_DELAY_MIN });
+            } else {
+                chrome.alarms.clear(ASSET_RETRY_ALARM);
+            }
+        }
+
+        // Toast — только по свежему батчу (ретраи молчат, чтобы не дублировать уведомления).
+        if (anyOkForBatch) {
+            const paths = batch.map(b => b.assetPath).filter(Boolean);
+            if (paths.length > 0) broadcastAssetToastToGameTabs(paths);
+        }
+    } finally {
+        assetFlushing = false;
+    }
+}
+
+// Ретрай недоставленных батчей. Alarm переживает выгрузку SW: сработка будит SW,
+// listener зарегистрирован на top-level (требование MV3). В prod-сборке permission
+// `alarms` вырезан build.ps1 — там chrome.alarms undefined, и коллектор не работает вовсе.
+if (chrome.alarms) {
+    chrome.alarms.onAlarm.addListener(async (alarm) => {
+        if (alarm.name !== ASSET_RETRY_ALARM) return;
+        const cfg = await getConfig();
+        if (cfg.isDev) flushAssetQueue(cfg);
+    });
 }
 
 /**
