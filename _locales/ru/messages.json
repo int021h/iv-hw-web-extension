@@ -69,6 +69,7 @@
   "rpc_remoteConfigInit":               { "message": "Эвенты: ссылки на цепочки" },
   "rpc_specialQuestInit":               { "message": "Эвенты: сезонные (расписание)" },
   "rpc_specialQuestEvents":             { "message": "Эвенты: сезонные (вкладки)" },
+  "rpc_getSpecialQuestState":           { "message": "Эвенты: сезонные (расписание и вкладки)" },
   "rpc_arenaFindEnemies":               { "message": "Арена: соперники из поиска" },
   "rpc_battleGetByType":                { "message": "Арена: лог боёв" },
   "rpc_customArena_endBattle":          { "message": "Арена: результат боя" },

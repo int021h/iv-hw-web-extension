@@ -37,8 +37,12 @@
     'questGetEvents',
     'remoteConfigInit',
     // --- Сезонные эвенты «Царства» (liveOps-механика specialQuest) ---
-    // На случай если вендор заведёт их и как HTTP-RPC; сейчас они приходят по MQTT
-    // (см. MQTT_TYPES ниже) — имена методов вытащены из строк клиента.
+    // С 2026-08-10 расписание тиров и состав вкладок игра тянет HTTP-RPC'ом
+    // getSpecialQuestState на холодном старте (в вызове новое поле "feature":"quest").
+    // MQTT-push specialQuestEvents с тем же телом жив, но приходит нерегулярно
+    // (на старте недели 10.08 не пришёл вовремя — задания не подгрузились);
+    // ловим оба источника, перехват push'а — в MQTT_TYPES ниже.
+    'getSpecialQuestState',
     'specialQuestInit',
     'specialQuestEvents',
     // --- Эвент-магазины: ассортимент магазинов событий (shopId >= 1000000) ---
@@ -263,11 +267,14 @@
   // ===========================================================================
   // Игра держит MQTT-соединение с `wss://emqx-hwmb-wss.nextersglobal.com/mqtt`
   // (paho-mqtt) и шлёт в него push'и по топикам `hwm/user/<id>`, `hwm/pub/clan/<id>`
-  // и др. С 2026-07-16 вендор УБРАЛ конфиги specialQuestEvent/specialQuestGroup из
-  // индекса remoteConfigInit — расписание тиров и состав вкладок сезонных эвентов
-  // теперь приходят ТОЛЬКО сюда, сообщением `{"result":{"type":"specialQuestEvents",
-  // "body":{"events":[{id,start,end,viewId,groups:[{id,repeatType,localeKey,quests}]}]}}}`.
-  // Это ещё и авторитетнее конфига: repeatType живой (в снимке конфига вкладки арены
+  // и др. С 2026-07-16 по ~2026-08-10 расписание тиров и состав вкладок сезонных
+  // эвентов приходили ТОЛЬКО сюда, сообщением `{"result":{"type":"specialQuestEvents",
+  // "body":{"events":[{id,start,end,viewId,groups:[{id,repeatType,localeKey,quests}]}]}}}`
+  // (конфиги specialQuestEvent/specialQuestGroup сняты с индекса remoteConfigInit).
+  // С 2026-08-10 push приходит нерегулярно (на старте недели не был доставлен вовремя) —
+  // основным источником стал HTTP-RPC getSpecialQuestState холодного старта (то же тело,
+  // ловится обычным whitelist'ом выше); MQTT-перехват дополняет его. Живой снимок
+  // авторитетнее конфига — repeatType фактический (в снимке конфига вкладки арены
   // помечены Repeatable, а в игре они single).
   //
   // Забираем только whitelist'нутые типы: топики global-map сыплют сотни
