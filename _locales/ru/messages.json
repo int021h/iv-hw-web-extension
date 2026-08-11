@@ -75,6 +75,7 @@
   "rpc_customArena_endBattle":          { "message": "Арена: результат боя" },
   "rpc_rune_getAll":                    { "message": "Калькулятор: классовые сферы" },
   "rpc_set_getAll":                     { "message": "Калькулятор: наборы" },
+  "rpc_talisman_getAll":                { "message": "Калькулятор: талисманы" },
   "rpc_getHeroSummary":                 { "message": "Калькулятор: умения Царства" },
   "rpc_research_getSummary":            { "message": "Калькулятор: технологии" }
 }

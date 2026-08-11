@@ -75,6 +75,7 @@
   "rpc_customArena_endBattle":          { "message": "Arena: battle result" },
   "rpc_rune_getAll":                    { "message": "Calculator: class rune spheres" },
   "rpc_set_getAll":                     { "message": "Calculator: kits" },
+  "rpc_talisman_getAll":                { "message": "Calculator: talismans" },
   "rpc_getHeroSummary":                 { "message": "Calculator: Realm skills" },
   "rpc_research_getSummary":            { "message": "Calculator: research" }
 }
