@@ -53,7 +53,8 @@
     // разворачивает его в per-shop shopGet при ingest'е; shopGet оставлен на случай отката.
     'shopGetMany',
     // --- Арена: соперники из поиска и лог боёв ---
-    // battleGetByType — общий метод логов; бэк обрабатывает только args.type === 'arena'.
+    // battleGetByType — общий метод логов; бэк обрабатывает args.type 'arena' (арена целиком)
+    // и 'grand' (бои Гранд Арены — в корпус контр-паков), остальные типы игнорирует.
     'arenaFindEnemies',
     'battleGetByType',
     'customArena_endBattle',
