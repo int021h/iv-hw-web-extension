@@ -7,12 +7,8 @@
 ## Как это работает
 
 ```
-страница игры (MAIN world)          isolated world              service worker
-┌──────────────────────┐   postMessage   ┌────────────┐   sendMessage   ┌───────────────┐
-│ inject.js            │ ───────────────▶│ content.js │ ───────────────▶│ background.js │
-│ обёртки fetch / XHR /│                 │ bridge, UI │                 │ очередь, батчи│
-│ WebSocket (MQTT)     │                 │ pill+toasts│                 │ POST на бэк   │
-└──────────────────────┘                 └────────────┘                 └───────────────┘
+inject.js ──postMessage──▶ content.js ──sendMessage──▶ background.js ──HTTP──▶ ms-hw
+MAIN world страницы игры   isolated world (bridge, UI) service worker (очередь)
 ```
 
 - **`src/inject.js`** — инжектится в MAIN world страницы игры. Оборачивает `fetch`,
