@@ -1,69 +1,86 @@
-# IV-HW-WEB-EXTENSION
+# Warden — браузерное расширение
 
-Browser-расширение (Chrome / Edge, Manifest V3) — перехватывает RPC-вызовы Hero Wars Alliance
-и отправляет их в ms-hw для аналитики гильдии.
+Расширение Chrome / Edge (Manifest V3) для [hw-warden.com](https://hw-warden.com):
+перехватывает RPC-вызовы игры Hero Wars Alliance и отправляет их на бэкенд ms-hw
+для аналитики гильдии (войны, турниры, прогресс, калькулятор).
 
-## Пересылаемые методы
-
-Расширение фильтрует и пересылает только те RPC, которые реально обрабатываются сервисами ms-hw:
-
-- `user_getClanInfo` — player id + гильдия, ростер с ролями
-- `clanClash_getUserClanResult` — расстановки турнира (Столкновение, lvl 2)
-- `clanClash_getLaneBattle` — составы боёв (Столкновение, lvl 3)
-- `clanClash_getCurrentState` — наша расстановка до боёв (Столкновение, lvl 4)
-- `clanWarChampDefence_getDefence` — ростеры игроков в Чемпионате Гильдий (прогресс)
-- `clanWarGetInfo` — активная Война Гильдий, её состояние + ростер врага
-- `clanWarGetDayHistory` — все бои конкретного дня войны с replay'ями (составы команд)
-- `clanWarGetAvailableHistory` — список прошедших войн гильдии
-- `clanWarGetDefence` — текущая защитная расстановка гильдии по 40 слотам
-
-## Структура
+## Как это работает
 
 ```
-manifest.json
-src/
-  inject.js          # MAIN world: обёртка fetch + XMLHttpRequest
-  content.js         # bridge: инжектит inject.js, пересылает сообщения в background
-  background.js      # очередь + батчинг + POST /api/hw/har/ingest
-  popup/
-    popup.html
-    popup.js
-    popup.css
+страница игры (MAIN world)          isolated world              service worker
+┌──────────────────────┐   postMessage   ┌────────────┐   sendMessage   ┌───────────────┐
+│ inject.js            │ ───────────────▶│ content.js │ ───────────────▶│ background.js │
+│ обёртки fetch / XHR /│                 │ bridge, UI │                 │ очередь, батчи│
+│ WebSocket (MQTT)     │                 │ pill+toasts│                 │ POST на бэк   │
+└──────────────────────┘                 └────────────┘                 └───────────────┘
 ```
+
+- **`src/inject.js`** — инжектится в MAIN world страницы игры. Оборачивает `fetch`,
+  `XMLHttpRequest` и `WebSocket` (MQTT-пуши), разбирает RPC-батчи `api/rpc` и
+  пересылает только методы из whitelist'а `ALLOWED_METHODS` — **актуальный список
+  методов смотри там**, README его сознательно не дублирует. Особые случаи
+  (обобщённое имя `getSummary`, MQTT-типы) прокомментированы прямо в коде.
+- **`src/content.js`** — мост isolated↔MAIN world; рисует pill-индикатор и
+  toast-уведомления об отправленных методах на странице игры.
+- **`src/background.js`** — service worker: очередь с батчингом
+  (`POST /api/hw/har/ingest`), авторизация через `POST /api/auth/exchange`
+  (JWT кладётся в cookie сайтов Warden через `chrome.cookies`), бейдж на иконке.
+  Плюс DEV-only механики, см. ниже.
+- **`src/marker.js`** — на страницах web-приложения Warden ставит
+  `<meta name="warden-version">`, по которому сайт понимает, что расширение установлено.
+- **`src/i18n.js` + `_locales/{ru,en}/`** — локализация (стандартный Chrome i18n формат
+  + переключатель Auto/RU/EN в popup через `chrome.storage.local.localeOverride`).
+  Любой `messages.json`, который фетчится из content-script, обязан быть перечислен
+  в `web_accessible_resources` манифеста — иначе fetch молча упадёт.
+- **`src/popup/`** — popup расширения: карточка игрока (имя/гильдия/роль),
+  статус синхронизации, счётчики отправки.
+
+## DEV и PROD режимы
+
+Режим определяется автоматически по способу установки
+(`chrome.management.getSelf().installType`):
+
+| | PROD (Chrome Web Store) | DEV (Load unpacked) |
+|---|---|---|
+| Цели отправки | только `api.hw-warden.com` | fan-out: `localhost:9102` **и** прод параллельно |
+| CDN asset collector (`/api/hw/asset/seen`) | — | ✔ |
+| Gamedata dumper (splitlib / переводы / remote-config → Chrome Downloads `HW/data/<версия>/`) | — | ✔ |
+
+DEV-only функциональность опирается на permissions `webRequest`, `downloads`, `alarms`
+и CDN-хосты в `host_permissions` — всё это вырезается из prod-сборки скриптом `build.ps1`.
+
+Легаси-хост `warden-api.pankov.dev` ведёт на тот же бэкенд и доживает переходный
+период для старых копий расширения (≤1.0.8).
 
 ## Установка (dev)
 
-1. Открыть `chrome://extensions/` (или `edge://extensions/`).
-2. Включить **Developer mode**.
-3. **Load unpacked** → выбрать эту папку.
-4. Открыть https://www.hero-wars-alliance.com/ и зайти в игру — в popup появится карточка
-   игрока (имя/гильдия/роль), статус синхронизации и счётчики отправки.
+1. `chrome://extensions/` (или `edge://extensions/`) → включить **Developer mode**.
+2. **Load unpacked** → выбрать корень этого репозитория.
+3. Открыть https://www.hero-wars-alliance.com/ и зайти в игру — в правом нижнем углу
+   появится pill расширения, в popup — карточка игрока и статус синхронизации.
 
-Адрес бэка захардкожен в `src/background.js` (`BACKEND_URL`). Для смены — править константу и пересобирать.
+Для gamedata dumper'а файлы падают в `Downloads/HW/data/`; чтобы они оказывались
+в рабочей папке импорта, удобно сделать симлинк:
+`mklink /D D:\HW\data %USERPROFILE%\Downloads\HW\data`.
 
-## Эндпоинт приёма
+## Сборка для Chrome Web Store
 
-`POST {backend}/api/hw/har/ingest`
-
-```json
-{
-  "playerId": "123456",
-  "calls": [
-    {
-      "method": "user_getClanInfo",
-      "requestArgs": { ... },
-      "response":    { ... },
-      "requestIdent": "body_abc",
-      "calledAt": "2026-04-18T12:34:56.789Z"
-    }
-  ]
-}
+```powershell
+.\build.ps1
 ```
 
-Бэк создаёт (или переиспользует) сессию импорта `ext-{playerId}-{yyyy-MM-dd}`
-и складывает записи в `hw.har_rpc_call`.
+Создаёт `warden-<version>.zip` (версия из `manifest.json`): внутрь попадают только
+`manifest.json` + `src/` + `icons/` + `_locales/`, из манифеста вырезаются
+DEV-only permissions и localhost-матчи. Детали и причины — в комментариях `build.ps1`.
 
-## Иконки
+`tools/popup-preview.html` — локальный предпросмотр popup без установки расширения;
+`tools/fit-to-store.ps1` — подгонка скриншотов под требования CWS. В сборку не входят.
 
-Минимально MV3 работает без иконок — Chrome подставит заглушку.
-При публикации нужны 16/48/128 px PNG в папке `icons/` и ссылки в `manifest.json.action.default_icon`.
+## Бэкенд-контракт
+
+- `POST /api/hw/har/ingest` — `{playerId, calls: [{method, requestArgs, response, requestIdent, calledAt}]}`;
+  бэк складывает записи в `hw.har_rpc_call` (сессия `ext-{playerId}-{yyyy-MM-dd}`) и
+  раздаёт по доменным импортёрам.
+- `POST /api/auth/exchange` — по `user_getClanInfo` апсертит пользователя/гильдию и
+  возвращает JWT для сессии сайта.
+- `POST /api/hw/asset/seen` — DEV-only реестр замеченных CDN-ассетов (`hw.game_asset`).
