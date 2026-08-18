@@ -1,7 +1,5 @@
 const $ = (id) => document.getElementById(id);
-
-const WARDEN_URL_PROD = 'https://hw-warden.com';
-const WARDEN_URL_DEV = 'http://localhost:3000';
+// Хосты — из общего src/config.js (HW_CONFIG), подключён в popup.html до этого файла.
 
 const ROLE_KEYS = {
   MASTER: 'role_MASTER',
@@ -19,7 +17,7 @@ const ROLE_KEYS = {
  * локальном бэке. Любой сбой деградирует в текущие фолбэки (инициалы / 🛡).
  * ========================================================================= */
 
-const ASSET_API = 'https://api.hw-warden.com';
+const ASSET_API = HW_CONFIG.API_PROD;
 
 /** Палитра цветов гильдейских флагов (индексы 0..19 из игры) — копия CLAN_PALETTE сайта. */
 const CLAN_PALETTE = [
@@ -321,10 +319,9 @@ async function showBackend() {
     const info = await chrome.management.getSelf();
     isDev = info.installType === 'development';
   } catch { /* ignore — оставляем PROD по умолчанию */ }
-  $('backend').textContent = isDev
-    ? 'localhost + api.hw-warden.com (DEV)'
-    : 'api.hw-warden.com';
-  $('wardenLink').href = isDev ? WARDEN_URL_DEV : WARDEN_URL_PROD;
+  const apiHost = new URL(HW_CONFIG.API_PROD).host;
+  $('backend').textContent = isDev ? `localhost + ${apiHost} (DEV)` : apiHost;
+  $('wardenLink').href = isDev ? HW_CONFIG.SITE_DEV : HW_CONFIG.SITE_PROD;
 }
 
 function showVersion() {

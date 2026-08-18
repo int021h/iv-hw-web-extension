@@ -16,17 +16,19 @@
 // ОБОИХ доменов: токен валиден независимо от домена, так и hw-warden.com, и легаси
 // warden.pankov.dev авторизованы без двойного обращения к бэку и без риска двойных
 // side-effect'ов (upsert/уведомления при exchange).
+importScripts('config.js');   // HW_CONFIG — хосты Warden (общие с попапом)
+
 const PROD_TARGET = {
-    url: 'https://api.hw-warden.com',
+    url: HW_CONFIG.API_PROD,
     cookies: [
-        { url: 'https://api.hw-warden.com/',     domain: '.hw-warden.com', secure: true },
-        { url: 'https://warden-api.pankov.dev/', domain: '.pankov.dev',    secure: true },
+        { url: `${HW_CONFIG.API_PROD}/`,   domain: '.hw-warden.com', secure: true },
+        { url: `${HW_CONFIG.API_LEGACY}/`, domain: '.pankov.dev',    secure: true },
     ],
 };
 const LOCAL_TARGET = {
-    url: 'http://localhost:9102',
+    url: HW_CONFIG.API_LOCAL,
     cookies: [
-        { url: 'http://localhost:9102/', domain: 'localhost', secure: false },
+        { url: `${HW_CONFIG.API_LOCAL}/`, domain: 'localhost', secure: false },
     ],
 };
 let configPromise = null;

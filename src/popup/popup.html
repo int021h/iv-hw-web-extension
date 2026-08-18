@@ -56,7 +56,7 @@
     <div class="stat stat-error" id="failedRow" hidden><span data-i18n="stat_failed">Ошибок в последнем батче</span><b id="lastFailed">0</b></div>
   </div>
 
-  <!-- href проставляется в popup.js (DEV → localhost, PROD → warden.pankov.dev) -->
+  <!-- href проставляется в popup.js из HW_CONFIG (DEV → localhost, PROD → hw-warden.com) -->
   <a class="warden-link" id="wardenLink" target="_blank" rel="noopener noreferrer" data-i18n="open_warden">
     Открыть Warden →
   </a>
@@ -71,10 +71,12 @@
     </div>
   </div>
 
+  <!-- Текст проставляется в popup.js из HW_CONFIG -->
   <div class="footer">
-    <span id="backend">api.hw-warden.com</span>
+    <span id="backend"></span>
   </div>
 
+  <script src="../config.js"></script>
   <script src="../i18n.js"></script>
   <script src="popup.js"></script>
 </body>

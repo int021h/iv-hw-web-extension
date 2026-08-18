@@ -136,10 +136,14 @@
             },
         };
 
-        // popup.js грузим динамически — только после того как window.chrome готов
-        const s = document.createElement('script');
-        s.src = '../src/popup/popup.js';
-        document.body.appendChild(s);
+        // Скрипты грузим динамически — только после того как window.chrome готов.
+        // Порядок как в popup.html: config.js (HW_CONFIG) → popup.js.
+        for (const src of ['../src/config.js', '../src/popup/popup.js']) {
+            const s = document.createElement('script');
+            s.src = src;
+            s.async = false;   // сохранить порядок выполнения при динамической вставке
+            document.body.appendChild(s);
+        }
     })();
 </script>
 
