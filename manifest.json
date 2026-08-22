@@ -43,7 +43,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["src/inject.js", "_locales/ru/messages.json", "_locales/en/messages.json"],
+      "resources": ["src/inject.js", "_locales/ru/messages.json", "_locales/en/messages.json", "src/macro/engine.js"],
       "matches": ["https://*.hero-wars-alliance.com/*"]
     }
   ],
