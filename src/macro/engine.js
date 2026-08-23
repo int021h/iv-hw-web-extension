@@ -21,48 +21,6 @@
     const MACRO_SESSION_START_KEY = 'macroSessionStart'
     const MACRO_RELOAD_COUNT_KEY = 'macroReloadCount'
 
-    // ======== REMOTE CONTROL via own Telegram bot ==========
-    const TELEGRAM_REMOTE_CONTROL = false
-    const TELEGRAM_CONTROL_URL = 'http://127.0.0.1:8765'
-    const TELEGRAM_POLL_INTERVAL = 1000
-    const TELEGRAM_LAST_COMMAND_KEY = 'telegram_dungeon_last_command'
-    const TELEGRAM_NOTIFY_EVERY_N_FLOORS = 10 // отправлять сообщение в Telegram каждые N пройденных этажей
-
-    // Отправляет произвольное сообщение в Telegram через локальный сервер.
-    // ОЖИДАЕТСЯ, что локальный сервер (TELEGRAM_CONTROL_URL) умеет принимать
-    // POST /notify с телом {message: "..."} и пересылать его в Telegram.
-    async function sendTelegramNotify(message) {
-        if (!TELEGRAM_REMOTE_CONTROL) {
-            return
-        }
-
-        console.log('[Telegram] sending notify:', message)
-
-        try {
-            const response = await fetch(
-                `${TELEGRAM_CONTROL_URL}/notify`,
-                {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    cache: 'no-store',
-                    body: JSON.stringify({ message })
-                }
-            )
-
-            if (!response.ok) {
-                console.log('[Telegram] notify server responded with error:', response.status, await response.text())
-            } else {
-                console.log('[Telegram] notify sent OK')
-            }
-        } catch (error) {
-            console.log('[Telegram] notify failed:', error.message)
-        }
-    }
-
-    function formatNowForTelegram() {
-        return new Date().toLocaleString('ru-RU', { hour12: false })
-    }
-
     let GAME_LOAD_TIMEOUT = Number(localStorage.getItem('GAME_LOAD_TIMEOUT') || 10000) // Time required for the game to initialize
 
     let DELAY_CHECK_CYCLE = Number(localStorage.getItem('DELAY_CHECK_CYCLE') || 5000) // check control pixel every 100msec until MAX_WAIT_BEFORE_RETRY
@@ -137,6 +95,50 @@
     const actionInterruptIfColor = 24
     const actionInterruptIfNotColor = 25
 
+
+    // ======== REMOTE CONTROL via own Telegram bot ==========
+    const TELEGRAM_REMOTE_CONTROL = false
+    const TELEGRAM_CONTROL_URL = 'http://127.0.0.1:8765'
+    const TELEGRAM_POLL_INTERVAL = 1000
+    const TELEGRAM_LAST_COMMAND_KEY = 'telegram_dungeon_last_command'
+    const TELEGRAM_NOTIFY_EVERY_N_FLOORS = 10 // отправлять сообщение в Telegram каждые N пройденных этажей
+
+    // Отправляет произвольное сообщение в Telegram через локальный сервер.
+    // ОЖИДАЕТСЯ, что локальный сервер (TELEGRAM_CONTROL_URL) умеет принимать
+    // POST /notify с телом {message: "..."} и пересылать его в Telegram.
+    async function sendTelegramNotify(message) {
+        if (!TELEGRAM_REMOTE_CONTROL) {
+            return
+        }
+
+        console.log('[Telegram] sending notify:', message)
+
+        try {
+            const response = await fetch(
+                `${TELEGRAM_CONTROL_URL}/notify`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    cache: 'no-store',
+                    body: JSON.stringify({ message })
+                }
+            )
+
+            if (!response.ok) {
+                console.log('[Telegram] notify server responded with error:', response.status, await response.text())
+            } else {
+                console.log('[Telegram] notify sent OK')
+            }
+        } catch (error) {
+            console.log('[Telegram] notify failed:', error.message)
+        }
+    }
+
+    function formatNowForTelegram() {
+        return new Date().toLocaleString('ru-RU', { hour12: false })
+    }
+
+    
     // ========= CRASH HANDLERS =========
     // ----------------------- mmoebius
     // ugly workaround to check if errors occured
