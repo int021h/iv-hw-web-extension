@@ -26,6 +26,42 @@
     const TELEGRAM_CONTROL_URL = 'http://127.0.0.1:8765'
     const TELEGRAM_POLL_INTERVAL = 1000
     const TELEGRAM_LAST_COMMAND_KEY = 'telegram_dungeon_last_command'
+    const TELEGRAM_NOTIFY_EVERY_N_FLOORS = 10 // отправлять сообщение в Telegram каждые N пройденных этажей
+
+    // Отправляет произвольное сообщение в Telegram через локальный сервер.
+    // ОЖИДАЕТСЯ, что локальный сервер (TELEGRAM_CONTROL_URL) умеет принимать
+    // POST /notify с телом {message: "..."} и пересылать его в Telegram.
+    async function sendTelegramNotify(message) {
+        if (!TELEGRAM_REMOTE_CONTROL) {
+            return
+        }
+
+        console.log('[Telegram] sending notify:', message)
+
+        try {
+            const response = await fetch(
+                `${TELEGRAM_CONTROL_URL}/notify`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    cache: 'no-store',
+                    body: JSON.stringify({ message })
+                }
+            )
+
+            if (!response.ok) {
+                console.log('[Telegram] notify server responded with error:', response.status, await response.text())
+            } else {
+                console.log('[Telegram] notify sent OK')
+            }
+        } catch (error) {
+            console.log('[Telegram] notify failed:', error.message)
+        }
+    }
+
+    function formatNowForTelegram() {
+        return new Date().toLocaleString('ru-RU', { hour12: false })
+    }
 
     let GAME_LOAD_TIMEOUT = Number(localStorage.getItem('GAME_LOAD_TIMEOUT') || 10000) // Time required for the game to initialize
 
@@ -112,7 +148,7 @@
                 setTimeout(() => {
                     const errors = document.getElementsByClassName('error-card');
                     if(errors.length > 0) {
-                        reloadPage();
+                        reloadPage('обнаружена ошибка на странице (error-card)');
                     }
                     resolve("");
                 }, 1000);
@@ -169,17 +205,28 @@
         }
     }
 
-    // counts reloads towards the "reloads: [N]" toolbar indicator, then reloads the page
-    function reloadPage() {
+    // counts reloads towards the "reloads: [N]" toolbar indicator, notifies Telegram
+    // (awaited BEFORE location.reload(), otherwise navigation can cut off the request), then reloads the page.
+    // reloadInFlight guards against duplicate triggers piling up while the notify is in flight
+    // (e.g. checkError()'s 1s poll seeing the same still-present error-card again) - only the
+    // first call counts the reload and sends the notify.
+    let reloadInFlight = false
+    async function reloadPage(reason = 'unknown') {
+        if (reloadInFlight) {
+            return
+        }
+        reloadInFlight = true
+
         const count = (parseInt(localStorage.getItem(MACRO_RELOAD_COUNT_KEY), 10) || 0) + 1
         localStorage.setItem(MACRO_RELOAD_COUNT_KEY, String(count))
+        await sendTelegramNotify(`🔄 Страница перезагружается (${reason})\nВремя: ${formatNowForTelegram()}`)
         location.reload()
     }
 
     window.addEventListener('unhandledrejection', (e) => {
         const msg = String(e.reason);
         if (msg.includes('OOM') || msg.includes('memory access out of bounds') || msg.includes('Internal Server Error')) {
-            reloadPage();
+            reloadPage('критическая ошибка (unhandledrejection): ' + msg.slice(0, 120));
         } else {
             addError(msg)
         }
@@ -189,7 +236,7 @@
     console.error = function (...args) {
         const msg = args.join(' ');
         if (msg.includes('OOM') || msg.includes('memory access out of bounds') || msg.includes('Internal Server Error')) {
-            reloadPage();
+            reloadPage('критическая ошибка (console.error): ' + msg.slice(0, 120));
         } else {
             addError(msg)
         }
@@ -207,6 +254,8 @@
 
     async function startMainScript(gameCanvas) {
         /// Send your ideas for improvements to HWA: Deidara/Phoenix Rebirth or to Discord: @int021h
+
+        await sendTelegramNotify(`🚀 Скрипт запущен\nВремя: ${formatNowForTelegram()}`)
 
         let gameArea = gameCanvas.getBoundingClientRect()
         let canvasScaleX = gameCanvas.width / gameArea.width
@@ -265,7 +314,12 @@
                     // Не запускаем второй экземпляр Dungeon
                     if (isRunningMacro !== MACRO_DUNGEON) {
                         console.log('[Telegram] Starting Dungeon')
-                        await runDungeonMacro()
+                        // ВАЖНО: не await'им - runDungeonMacro() работает часами,
+                        // а await здесь заблокировал бы опрос команд (в т.ч. /stop)
+                        // до самого завершения забега.
+                        runDungeonMacro().catch((error) => {
+                            console.log('[Dungeon] runDungeonMacro error:', error?.message || error)
+                        })
                     }
 
                 } else if (command.command === 'stop') {
@@ -278,6 +332,7 @@
 
                         setActivated(dailyButton, false, BUTTON_TEXT_STOP_CUSTOM, BUTTON_TEXT_RUN_CUSTOM)
                         await releaseWakeLock()
+                        await sendTelegramNotify(`⏹ Скрипт остановлен\nВремя: ${formatNowForTelegram()}`)
                     }
                 }
 
@@ -1955,7 +2010,7 @@
                             await releaseWakeLock()
 
                             localStorage.setItem("last_macro", MACRO_FRONTIER)
-                            reloadPage()
+                            reloadPage('низкое HP титана: ' + error)
                         }
                         return
                     }
@@ -2000,7 +2055,7 @@
                     if (colorsAreSame(pixel, color, threshold)) {
                         document.title = "failed " + lvlTitle + ": " + title
                         addError("failed waiting " + title + " [" + pixel[0] + "," + pixel[1] +","+ pixel[2] + "] != [" + color[0] +","+ color[1]+","+ color[2] + "]")
-                        reloadPage()
+                        reloadPage('не дождались нужного цвета: ' + title)
                         break
                     }
                 } else if (actionType == actionWaitForColor) {
@@ -2030,7 +2085,7 @@
                                 document.title = "skipped " + lvlTitle + ": " + title
                                 addError("skipped waiting " + lvlTitle + ": " + title + " [" + pixel[0] + "," + pixel[1] +","+ pixel[2] + "] != [" + color[0] +","+ color[1]+","+ color[2] + "]")
                                 if (RELOAD_PAGE_ON_FAILURE) {
-                                    reloadPage()
+                                    reloadPage('превышено число попыток: ' + lvlTitle + ' / ' + title)
                                 }
                                 break
                             }
@@ -2252,6 +2307,64 @@
             setActivated(dailyButton, false, BUTTON_TEXT_STOP_CUSTOM, BUTTON_TEXT_RUN_CUSTOM)
         }
 
+        // ======== daily floor counter (feeds the Telegram progress notify) ========
+        const DAILY_FLOOR_COUNT_KEY = 'daily_floor_count'
+        const DAILY_FLOOR_DATE_KEY = 'daily_floor_date'
+        const DAILY_FLOOR_START_TIME_KEY = 'daily_floor_start_time' // когда начался отсчёт текущих суток (мс)
+        const DAILY_FLOOR_LAST_NOTIFY_TIME_KEY = 'daily_floor_last_notify_time' // когда было последнее уведомление о N этажах (мс)
+
+        function getDailyGameDate() {
+            const now = new Date()
+
+            if (now.getHours() < 5) {
+                now.setDate(now.getDate() - 1)
+            }
+
+            return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+        }
+
+        function addDailyFloor() {
+            const currentDay = getDailyGameDate()
+            const savedDay = localStorage.getItem(DAILY_FLOOR_DATE_KEY)
+            const dayChanged = savedDay !== currentDay
+            // важно: ключи времени могли ни разу не создаться (например, если сутки
+            // не менялись с момента добавления этой фичи) — тогда инициализируем их
+            // отдельно, а не только при смене дня
+            const timersMissing =
+                !localStorage.getItem(DAILY_FLOOR_START_TIME_KEY) ||
+                !localStorage.getItem(DAILY_FLOOR_LAST_NOTIFY_TIME_KEY)
+
+            if (dayChanged) {
+                localStorage.setItem(DAILY_FLOOR_DATE_KEY, currentDay)
+                localStorage.setItem(DAILY_FLOOR_COUNT_KEY, '0')
+            }
+
+            if (dayChanged || timersMissing) {
+                const now = String(Date.now())
+                localStorage.setItem(DAILY_FLOOR_START_TIME_KEY, now)
+                localStorage.setItem(DAILY_FLOOR_LAST_NOTIFY_TIME_KEY, now)
+            }
+
+            const count = Number(localStorage.getItem(DAILY_FLOOR_COUNT_KEY) || '0') + 1
+            localStorage.setItem(DAILY_FLOOR_COUNT_KEY, String(count))
+
+            return count
+        }
+
+        function formatTelegramDuration(ms) {
+            const totalSeconds = Math.max(0, Math.round(ms / 1000))
+            const hours = Math.floor(totalSeconds / 3600)
+            const minutes = Math.floor((totalSeconds % 3600) / 60)
+            const seconds = totalSeconds % 60
+
+            const parts = []
+            if (hours > 0) parts.push(`${hours}ч`)
+            if (hours > 0 || minutes > 0) parts.push(`${minutes}м`)
+            parts.push(`${seconds}с`)
+
+            return parts.join(' ')
+        }
+
         let fromHomePage = false
         // Dungeon MACRO
         async function runDungeonMacro(isResume = false) {
@@ -2259,6 +2372,7 @@
                 isRunningMacro = null
                 setActivated(dailyButton, false, BUTTON_TEXT_STOP_CUSTOM, BUTTON_TEXT_RUN_CUSTOM)
                 await releaseWakeLock()
+                await sendTelegramNotify(`⏹ Скрипт остановлен\nВремя: ${formatNowForTelegram()}`)
                 return
             }
             localStorage.setItem("last_macro", MACRO_DUNGEON)
@@ -2450,6 +2564,26 @@
                     title("lvl0"), ...fastLeftGateActions, waitForGateRight, gateRight, waitFor2RoomSelection, checkRoomColors, roomLeft, roomRight, ...battleActions,
                     title("floor2"), waitForFloor2Done, floor2Done, waitForFloorConfirm, floorConfirm,
                 ], MACRO_DUNGEON)
+
+                // за один проход итерации проходятся 2 этажа (floor1 и floor2)
+                for (let f = 0; f < 2; f++) {
+                    const floorCount = addDailyFloor()
+                    if (floorCount % TELEGRAM_NOTIFY_EVERY_N_FLOORS === 0) {
+                        const now = Date.now()
+                        const startTime = Number(localStorage.getItem(DAILY_FLOOR_START_TIME_KEY) || now)
+                        const lastNotifyTime = Number(localStorage.getItem(DAILY_FLOOR_LAST_NOTIFY_TIME_KEY) || startTime)
+
+                        const batchDuration = formatTelegramDuration(now - lastNotifyTime)
+                        const totalDuration = formatTelegramDuration(now - startTime)
+
+                        localStorage.setItem(DAILY_FLOOR_LAST_NOTIFY_TIME_KEY, String(now))
+
+                        await sendTelegramNotify(
+                            `🏰 Пройдено ${TELEGRAM_NOTIFY_EVERY_N_FLOORS} этажей за ${batchDuration}\n` +
+                            `Всего пройдено ${floorCount} этажей за ${totalDuration}`
+                        )
+                    }
+                }
             }
 
             setActivated(dailyButton, false, BUTTON_TEXT_STOP_CUSTOM, BUTTON_TEXT_RUN_CUSTOM)
