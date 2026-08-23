@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dungeon runner
 // @namespace    http://tampermonkey.net/
-// @version      2026-08-22_19:57
+// @version      2026-08-23_14:13
 // @description  try to take over the world!
 // @author       You
 // @match        https://www.hero-wars-alliance.com/*
@@ -9,45 +9,61 @@
 // @grant        none
 // ==/UserScript==
 
-(() => {
+(async function() {
+    'use strict';
+
     /// ======== OPTIONS ==========
+    const WARDEN = false
 
-    const GAME_LOAD_TIMEOUT = 10000; // Time required for the game to initialize
+    const PERSIST_LOGS = true
+    const PERSISTED_LOGS_KEY = 'persistedLogs'
 
-    const DELAY_CHECK_CYCLE = 5000 // check control pixel every 100msec until MAX_WAIT_BEFORE_RETRY
+    const MACRO_SESSION_START_KEY = 'macroSessionStart'
+    const MACRO_RELOAD_COUNT_KEY = 'macroReloadCount'
+
+    // ======== REMOTE CONTROL via own Telegram bot ==========
+    const TELEGRAM_REMOTE_CONTROL = false
+    const TELEGRAM_CONTROL_URL = 'http://127.0.0.1:8765'
+    const TELEGRAM_POLL_INTERVAL = 1000
+    const TELEGRAM_LAST_COMMAND_KEY = 'telegram_dungeon_last_command'
+
+    let GAME_LOAD_TIMEOUT = Number(localStorage.getItem('GAME_LOAD_TIMEOUT') || 10000) // Time required for the game to initialize
+
+    let DELAY_CHECK_CYCLE = Number(localStorage.getItem('DELAY_CHECK_CYCLE') || 5000) // check control pixel every 100msec until MAX_WAIT_BEFORE_RETRY
     const MAX_WAIT_BEFORE_RETRY = 5000 // max waiting time for a new screen to appear
     const MAX_RETRIES = 3 // after 3 retries if screen didn't appear => page will be reloaded and script restarts
     const RELOAD_PAGE_ON_FAILURE = true //
 
     //initial dungeon delays
     const MAX_FLOORS = 10000
-    const DELAY_AFTER_CLICKING_GUILD = 5000
-    const DELAY_AFTER_CLICKING_DUNGEON = 5000
-    const EXTRA_GATE_DELAY_FIRST_FLOOR = 0
-    const EXTRA_WALK_DELAY_FIRST_FLOOR = 2000
-    const EXTRA_FLOOR_DELAY_FIRST_FLOOR = 3000
+    let DELAY_AFTER_CLICKING_GUILD = Number(localStorage.getItem('DELAY_AFTER_CLICKING_GUILD') || 5000)
+    let DELAY_AFTER_CLICKING_DUNGEON = Number(localStorage.getItem('DELAY_AFTER_CLICKING_DUNGEON') || 5000)
+    let EXTRA_GATE_DELAY_FIRST_FLOOR = Number(localStorage.getItem('EXTRA_GATE_DELAY_FIRST_FLOOR') || 0)
+    let EXTRA_WALK_DELAY_FIRST_FLOOR = Number(localStorage.getItem('EXTRA_WALK_DELAY_FIRST_FLOOR') || 2000)
+    let EXTRA_FLOOR_DELAY_FIRST_FLOOR = Number(localStorage.getItem('EXTRA_FLOOR_DELAY_FIRST_FLOOR') || 3000)
 
-    const EXTRA_DELAY_BEFORE_CONFIRM_BATTLE = 0
+    let EXTRA_DELAY_BEFORE_CONFIRM_BATTLE = Number(localStorage.getItem('EXTRA_DELAY_BEFORE_CONFIRM_BATTLE') || 0)
 
     // dungeon delays
-    const DELAY_FOR_TITANS_WALK = 500 // after battle results confirmed titans walk to another lvl
-    const DELAY_AFTER_CLICKING_AUTOBATTLE = 500 // minimum duration of the battle
-    const DELAY_AFTER_GATE_CLICKED = 500 // delay after clicking on lvl gate, before rooms selection popup appeared
-    const DELAY_AFTER_ROOM_CLICKED = 0 // delay between choosing the room and opening the battlefield
-    const DELAY_AFTER_CLICKING_FLOOR_REWARD = 1000 // click on shield at the end of the floor on lvl5 or lvl10
-    const DELAY_AFTER_FINISHING_FLOOR = 4000 // click on accept gold for the floor, titans slowly walk to the next floor
+    let DELAY_FOR_TITANS_WALK = Number(localStorage.getItem('DELAY_FOR_TITANS_WALK') || 500) // after battle results confirmed titans walk to another lvl
+    let DELAY_AFTER_CLICKING_AUTOBATTLE = Number(localStorage.getItem('DELAY_AFTER_CLICKING_AUTOBATTLE') || 500) // minimum duration of the battle
+    let DELAY_AFTER_GATE_CLICKED = Number(localStorage.getItem('DELAY_AFTER_GATE_CLICKED') || 500) // delay after clicking on lvl gate, before rooms selection popup appeared
+    let DELAY_AFTER_ROOM_CLICKED = Number(localStorage.getItem('DELAY_AFTER_ROOM_CLICKED') || 0) // delay between choosing the room and opening the battlefield
+    let DELAY_AFTER_CLICKING_FLOOR_REWARD = Number(localStorage.getItem('DELAY_AFTER_CLICKING_FLOOR_REWARD') || 1000) // click on shield at the end of the floor on lvl5 or lvl10
+    let DELAY_AFTER_FINISHING_FLOOR = Number(localStorage.getItem('DELAY_AFTER_FINISHING_FLOOR') || 1000) // click on accept gold for the floor, titans slowly walk to the next floor
 
     const COLORS_MATCH_THRESHOLD = 10
     let DEBUG_CLICKS = false
 
     const BUTTON_TEXT_RUN_DUNGEON = 'Run Dungeon'
-    const BUTTON_TEXT_STOP_DUNGEON = 'Stop Dungeon'
+    //const BUTTON_TEXT_STOP_DUNGEON = 'Stop Dungeon'
 
-    const BUTTON_TEXT_RUN_CUSTOM = 'Run...'
-    const BUTTON_TEXT_STOP_CUSTOM = 'Stop...'
+    const BUTTON_TEXT_RUN_CUSTOM = 'Run Macro'
+    const BUTTON_TEXT_STOP_CUSTOM = 'Stop Macro'
+    const BUTTON_TEXT_STOP_MACRO = 'Stop '
 
-    const BUTTON_TEXT_RUN_DEBUG = '👀'
-    const BUTTON_TEXT_STOP_DEBUG = '🚫'
+    const BUTTON_TEXT_RUN_DEBUG = '👀 Debug'
+    const BUTTON_TEXT_STOP_DEBUG = '🚫 Stop debug'
 
     const BUTTON_TEXT_RUN_REPEAT_CLICK = 'Start recording'
     const BUTTON_TEXT_ARMED_REPEAT_CLICK = 'Recording...'
@@ -60,15 +76,14 @@
     const MACRO_REPEAT_CLICK = 'repeat_click'
 
     const DEFAULT_ORDER = [
-        { id: 'mixed', label: '⚡', color: '#FFC107', dColor: '#806104', bColor: '#806104' },
-        { id: 'water', label: '💧', color: '#2196F3', dColor: '#104B7A', bColor: '#104B7A' },
-        { id: 'earth', label: '🍀', color: '#4CAF50', dColor: '#265828', bColor: '#265828' },
-        { id: 'fire', label: '🔥', color: '#F44336', dColor: '#7A211B', bColor: '#7A211B' },
+        //{ id: 'mixed', label: '⚡', background: 'linear-gradient(to bottom, #806104, #FFC107)', bColor: '#806104' },
+        { id: 'mixed', label: '⚡', background: 'radial-gradient(circle,#806104,#ffffff)', bColor: '#806104' },
+        { id: 'water', label: '💧', background: 'linear-gradient(to bottom, #104B7A, #2196F3)', bColor: '#104B7A' },
+        { id: 'earth', label: '🍀', background: 'linear-gradient(to bottom, #265828, #4CAF50)', bColor: '#265828' },
+        { id: 'fire', label: '🔥', background: 'linear-gradient(to bottom, #7A211B, #F44336)', bColor: '#7A211B' },
     ]
-    let elementsOrder = loadOrder()
-            
-    const WARDEN = false
 
+    
     // service actions
     const actionTitle = 1
     const actionDelay = 2
@@ -97,7 +112,7 @@
                 setTimeout(() => {
                     const errors = document.getElementsByClassName('error-card');
                     if(errors.length > 0) {
-                        location.reload();
+                        reloadPage();
                     }
                     resolve("");
                 }, 1000);
@@ -110,7 +125,7 @@
     checkError();
 
     function processRequest(call) {
-        addError('Captured:' + JSON.stringify(call));
+        //addError('Captured:' + JSON.stringify(call));
     }
 
     const ALLOWED_METHODS = new Set(['eternalStory_getState', 'dungeonGetInfo'])
@@ -147,12 +162,24 @@
         }
 
         container.scrollTop = container.scrollHeight
+
+        if (PERSIST_LOGS) {
+            const logs = Array.from(container.children).map(el => el.textContent)
+            localStorage.setItem(PERSISTED_LOGS_KEY, JSON.stringify(logs))
+        }
+    }
+
+    // counts reloads towards the "reloads: [N]" toolbar indicator, then reloads the page
+    function reloadPage() {
+        const count = (parseInt(localStorage.getItem(MACRO_RELOAD_COUNT_KEY), 10) || 0) + 1
+        localStorage.setItem(MACRO_RELOAD_COUNT_KEY, String(count))
+        location.reload()
     }
 
     window.addEventListener('unhandledrejection', (e) => {
         const msg = String(e.reason);
         if (msg.includes('OOM') || msg.includes('memory access out of bounds') || msg.includes('Internal Server Error')) {
-            location.reload();
+            reloadPage();
         } else {
             addError(msg)
         }
@@ -162,46 +189,13 @@
     console.error = function (...args) {
         const msg = args.join(' ');
         if (msg.includes('OOM') || msg.includes('memory access out of bounds') || msg.includes('Internal Server Error')) {
-            location.reload();
+            reloadPage();
         } else {
             addError(msg)
         }
         return originalError.apply(console, args);
     };
 
-
-    // ---------- storage ----------
-    function loadOrder() {
-        try {
-            const saved = JSON.parse(
-                localStorage.getItem(STORAGE_KEY)
-            )
-            if (!Array.isArray(saved)) {
-                return DEFAULT_ORDER
-            }
-            const mapped = saved
-                .map(id => DEFAULT_ORDER.find(x => x.id === id))
-                .filter(Boolean)
-            if (mapped.length !== DEFAULT_ORDER.length) {
-                return DEFAULT_ORDER
-            }
-            return mapped
-        } catch {
-            return DEFAULT_ORDER
-        }
-    }
-
-    function saveOrder() {
-        localStorage.setItem(
-            STORAGE_KEY,
-            JSON.stringify(elementsOrder.map(x => x.id))
-        )
-    }
-    function getElementsPriority() {
-        return elementsOrder.map(x => x.id)
-    }
-
-                
     // ===== WAITING UNTIL GAME INITIALIZED =====
     const check = setInterval(async () => {
         const canvas = document.getElementById('gameCanvas')
@@ -221,23 +215,189 @@
         // MACRO stuff
 
         let isRunningMacro = null
+
+        // ======== TELEGRAM CONTROL =====================================================
+        let telegramPollTimer = null
+        let telegramPollRunning = false
+
+        function telegramGetLastCommand() {
+            return localStorage.getItem(TELEGRAM_LAST_COMMAND_KEY) || '0'
+        }
+
+        function telegramSetLastCommand(id) {
+            localStorage.setItem(TELEGRAM_LAST_COMMAND_KEY, String(id))
+        }
+
+        async function telegramPoll() {
+            if (telegramPollRunning) return
+            telegramPollRunning = true
+
+            try {
+                const response = await fetch(
+                    `${TELEGRAM_CONTROL_URL}/command?last=${encodeURIComponent(telegramGetLastCommand())}`,
+                    {
+                        method: 'GET',
+                        cache: 'no-store'
+                    }
+                )
+
+                if (!response.ok) {
+                    return
+                }
+
+                const command = await response.json()
+
+                if (!command || !command.id || !command.command) {
+                    return
+                }
+
+                telegramSetLastCommand(command.id)
+
+                console.log(
+                    '[Telegram] command:',
+                    command.command,
+                    'id:',
+                    command.id
+                )
+
+                if (command.command === 'start') {
+
+                    // Не запускаем второй экземпляр Dungeon
+                    if (isRunningMacro !== MACRO_DUNGEON) {
+                        console.log('[Telegram] Starting Dungeon')
+                        await runDungeonMacro()
+                    }
+
+                } else if (command.command === 'stop') {
+
+                    // Останавливаем только если Dungeon действительно работает
+                    if (isRunningMacro === MACRO_DUNGEON) {
+                        console.log('[Telegram] Stopping Dungeon')
+
+                        isRunningMacro = null
+
+                        setActivated(dailyButton, false, BUTTON_TEXT_STOP_CUSTOM, BUTTON_TEXT_RUN_CUSTOM)
+                        await releaseWakeLock()
+                    }
+                }
+
+            } catch (error) {
+                // Telegram server может быть временно недоступен.
+                // Не считаем это ошибкой игры.
+                console.log('[Telegram] control unavailable:', error.message)
+            } finally {
+                telegramPollRunning = false
+            }
+        }
+
+        async function startTelegramControl() {
+            if (!TELEGRAM_REMOTE_CONTROL) {
+                return
+            }
+
+            if (telegramPollTimer !== null) {
+                return
+            }
+
+            // Получаем текущую команду Telegram,
+            // но НЕ выполняем её.
+            try {
+                const response = await fetch(
+                    `${TELEGRAM_CONTROL_URL}/status`,
+                    {
+                        method: 'GET',
+                        cache: 'no-store'
+                    }
+                )
+
+                if (response.ok) {
+                    const status = await response.json()
+
+                    if (status && status.id) {
+                        telegramSetLastCommand(status.id)
+
+                        console.log(
+                            '[Telegram] Ignoring old command:',
+                            status.command,
+                            'id:',
+                            status.id
+                        )
+                    }
+                }
+
+            } catch (error) {
+                console.log(
+                    '[Telegram] Initial sync unavailable:',
+                    error.message
+                )
+            }
+
+            telegramPollTimer = setInterval(
+                telegramPoll,
+                TELEGRAM_POLL_INTERVAL
+            )
+        }
+
         let lvlTitle = ""
-        let delayFactor = restoreFloat("delayFactor", 1.0)
+        let delayFactor = Number(localStorage.getItem("delayFactor") || 1.0)
 
         // Pixel color picker
         const gl = gameCanvas.getContext('webgl2')
-        let readPixelsOnce = 0
-        let readX = 0
-        let readY = 0
         const pixels = new Uint8Array(4)
         let pendingRead = null
-        const originalRAF = window.requestAnimationFrame.bind(window)
-
+        
         let isRecordingClicks = false
         let recordedClicks = []
         let recordingConfig = { repeats: 1000, delay: 300 }
 
+        // ======== MACRO SESSION STATUS (time since start / reload count) ========
+        let macroTimeEl = null
+        let macroTimerInterval = null
+
+        function formatDuration(ms) {
+            const totalSeconds = Math.max(0, Math.floor(ms / 1000))
+            const hours = Math.floor(totalSeconds / 3600)
+            const minutes = Math.floor((totalSeconds % 3600) / 60)
+            const seconds = totalSeconds % 60
+            if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`
+            if (minutes > 0) return `${minutes}m ${seconds}s`
+            return `${seconds}s`
+        }
+
+        function updateMacroStatusDisplay() {
+            const startTime = parseInt(localStorage.getItem(MACRO_SESSION_START_KEY), 10)
+            const reloads = parseInt(localStorage.getItem(MACRO_RELOAD_COUNT_KEY), 10) || 0
+            if (macroTimeEl) {
+                const duration = Number.isFinite(startTime) ? formatDuration(Date.now() - startTime) : '0s'
+                macroTimeEl.textContent = `${duration} (${reloads})`
+            }
+        }
+
+        // isResume: true when a macro is being auto-continued after a page reload,
+        // as opposed to a fresh start requested by the user - only a fresh start resets the counters
+        function startMacroSession(isResume = false) {
+            if (!isResume) {
+                localStorage.setItem(MACRO_SESSION_START_KEY, String(Date.now()))
+                localStorage.setItem(MACRO_RELOAD_COUNT_KEY, '0')
+            }
+            if (macroTimerInterval == null) {
+                macroTimerInterval = setInterval(updateMacroStatusDisplay, 1000)
+            }
+            updateMacroStatusDisplay()
+        }
+
+        function stopMacroSession() {
+            localStorage.setItem("last_macro", null)
+
+            if (macroTimerInterval != null) {
+                clearInterval(macroTimerInterval)
+                macroTimerInterval = null
+            }
+            updateMacroStatusDisplay()
+        }
+
         async function releaseWakeLock() {
+            stopMacroSession()
             if (wakeLock != null) {
                 await wakeLock.release()
                 wakeLock = null
@@ -270,6 +430,7 @@
             }
         }
 
+        const originalRAF = window.requestAnimationFrame.bind(window)
         window.requestAnimationFrame = function(callback) {
             return originalRAF(function(time) {
                 try {
@@ -341,20 +502,19 @@
         }
 
         function setActivated(button, active, activeLabel, inactiveLabel) {
+            button.textContent = active ? activeLabel : inactiveLabel
             if (active) {
-                button.textContent = activeLabel
-                button.style.background = 'linear-gradient(180deg, #ff8a7a 0%, #b3261e 55%, #5e0d0d 100%)'
-                button.style.border = '1px solid #ffb0a8'
-                button.style.boxShadow = '0 0 12px rgba(255,70,70,0.45), inset 0 1px 0 rgba(255,255,255,0.18)'
-                button.style.color = '#fff0f0'
-                button.style.textShadow = '0 1px 3px rgba(0,0,0,0.8)'
+                button.style.background = 'linear-gradient(180deg, #d39a45 0%, #a86d1d 50%, #7b480d 100%)'
+                button.style.border = '1px solid #d5a45d'
+                button.style.boxShadow = '0 3px 6px rgba(0,0,0,0.65), inset 0 2px 3px rgba(255,255,255,0.45), inset 0 -4px 6px rgba(70,35,0,0.35)'
+                button.style.color = '#fffdf5'
+                button.style.textShadow = '0 2px 2px rgba(0,0,0,0.8)'
             } else {
-                button.textContent = inactiveLabel
-                button.style.background = 'linear-gradient(180deg, #ffe08a 0%, #d08b18 55%, #8f5310 100%)'
-                button.style.border = '1px solid #ffcf66'
-                button.style.boxShadow = '0 0 10px rgba(255,180,50,0.35), inset 0 1px 0 rgba(255,255,255,0.25)'
-                button.style.color = '#fff6d6'
-                button.style.textShadow = '0 1px 2px rgba(0,0,0,0.7)'
+                button.style.background = 'linear-gradient(180deg, #65d51a 0%, #3cab08 50%, #247d00 100%)'
+                button.style.border = '1px solid #c9974b'
+                button.style.boxShadow = '0 3px 6px rgba(0,0,0,0.65), inset 0 2px 3px rgba(255,255,255,0.45), inset 0 -4px 6px rgba(0,60,0,0.3)'
+                button.style.color = '#fffdf5'
+                button.style.textShadow = '0 2px 2px rgba(0,0,0,0.8)'
             }
         }
 
@@ -385,20 +545,78 @@
         }
 
         function addNiceToolbar() {
-            const hpLimit = restoreInt("stopHPLimit", 0)
+            const greenButtonStyle = {
+                background: 'linear-gradient(180deg, #65d51a 0%, #3cab08 50%, #247d00 100%)',
+                color: '#fffdf5',
+                border: '1px solid #c9974b',
+                borderRadius: '8px',
+                padding: '4px 12px',
+                minHeight: '32px',
+                fontWeight: 'normal',
+                fontSize: '14px',
+                cursor: 'pointer',
+                textShadow: '0 2px 2px rgba(0,0,0,0.8)',
+                boxShadow: 'inset 0 2px 3px rgba(255,255,255,0.45), inset 0 -4px 6px rgba(0,60,0,0.3)',
+                transition: 'all 0.15s ease'
+            }
+
+            
+            const blueButtonStyle = {
+                background: 'linear-gradient(180deg, rgb(48,141,219) 0%, rgb(12,103,182) 55%, rgb(4, 69, 125) 100%)',
+                color: '#fff6d6',
+                border: '1px solid #b18f45',
+                borderRadius: '8px',
+                padding: '4px 12px',
+                minHeight: '32px',
+                fontWeight: 'normal',
+                fontSize: '14px',
+                cursor: 'pointer',
+                textShadow: '0 1px 2px rgba(0,0,0,0.7)',
+                boxShadow: 'inset 0 2px 3px rgba(255,255,255,0.45), inset 0 -4px 6px rgba(0,60,0,0.3)',
+                transition: '0.15s ease'
+            }
+            
+            
+            const inputStyle = {
+                borderRadius: '6px',
+                border: '2px solid transparent',
+                background: 'linear-gradient(#2d3543, #2d3543) padding-box, linear-gradient(to right, rgb(42,29,15), rgb(212,161,110), rgb(42,29,15)) border-box',
+                color: '#eef7ff',
+                padding: '4px 6px',
+                transition: 'background-color 0.2s ease, border-color 0.2s ease'
+            }
+
+            const frontierFieldStyle = {
+                width: '100%',
+                boxSizing: 'border-box',
+                borderRadius: '6px',
+                border: '2px solid transparent',
+                background: 'linear-gradient(#2d3543, #2d3543) padding-box, linear-gradient(to right, rgb(42,29,15), rgb(212,161,110), rgb(42,29,15)) border-box',
+                color: '#eef7ff',
+                padding: '4px 6px',
+                transition: 'background-color 0.2s ease, border-color 0.2s ease'
+            }
+
+            /*
+            textInput.style.border = '2px solid transparent';
+            textInput.style.borderRadius = '8px';   
+            textInput.style.background = 'linear-gradient(#fff, #fff) padding-box, linear-gradient(to right, rgb(42,29,15), rgb(212,161,110), rgb(42,29,15)) border-box';
+            */
+            const hpLimit = Number(localStorage.getItem("stopHPLimit") || 0)
 
             const container = document.createElement('span')
             container.style.display = 'inline-flex'
             container.style.alignItems = 'center'
             container.style.gap = '6px'
-            container.style.padding = '4px 10px'
+            container.style.padding = '10px 50px'
             container.style.marginLeft = '12px'
-            container.style.border = '1px solid rgba(120,180,255,0.35)'
-            container.style.borderRadius = '10px'
-            container.style.background = 'linear-gradient(180deg, rgba(20,30,55,0.92) 0%, rgba(8,12,25,0.92) 100%)'
-            container.style.boxShadow = '0 0 12px rgba(0,140,255,0.18)'
+            //container.style.border = '1px solid rgba(120,180,255,0.35)'
+            //container.style.borderRadius = '10px'
+            //container.style.background = 'linear-gradient(180deg, rgba(20,30,55,0.92) 0%, rgba(8,12,25,0.92) 100%)'
+            container.style.background = 'linear-gradient(90deg, transparent 0%, rgba(20, 30, 55, 0.92) 10%, rgba(20, 30, 55, 0.92) 90%, transparent 100%)'
+            //container.style.boxShadow = '0 0 12px rgba(0,140,255,0.18)'
             container.style.color = '#d9ecff'
-            container.style.fontSize = '14px'
+            container.style.fontSize = '16px'
             container.style.fontFamily = 'Trebuchet MS, Verdana, sans-serif'
             container.style.backdropFilter = 'blur(2px)'
 
@@ -412,7 +630,6 @@
                 el.style.cursor = 'pointer'
                 el.style.boxShadow = '0 0 6px rgba(80,160,255,0.25)'
             }
-
 
             const selectFactor = document.createElement('select')
             selectFactor.id = 'delayFactor'
@@ -479,49 +696,31 @@
             option4.textContent = 'Never'
             select.append(option1, option2, option3, option4)
 
-            const button = document.createElement('button')
-            button.id = 'dungeonMacroButton'
-            button.textContent = BUTTON_TEXT_RUN_DUNGEON
-            button.style.background = 'linear-gradient(180deg, #ffe08a 0%, #d08b18 55%, #8f5310 100%)'
-            button.style.color = '#fff6d6'
-            button.style.border = '1px solid #ffcf66'
-            button.style.borderRadius = '8px'
-            button.style.padding = '4px 12px'
-            button.style.fontWeight = 'bold'
-            button.style.cursor = 'pointer'
-            button.style.textShadow = '0 1px 2px rgba(0,0,0,0.7)'
-            button.style.boxShadow = '0 0 10px rgba(255,180,50,0.35), inset 0 1px 0 rgba(255,255,255,0.25)'
-            button.style.transition = '0.15s ease'
+            const dungeonButton = document.createElement('button')
+            dungeonButton.id = 'dungeonMacroButton'
+            dungeonButton.textContent = BUTTON_TEXT_RUN_DUNGEON
+            Object.assign(dungeonButton.style, greenButtonStyle)
 
-            button.onmouseenter = () => {
-                button.style.filter = 'brightness(1.12)'
+            dungeonButton.onmouseenter = () => {
+                dungeonButton.style.filter = 'brightness(1.12)'
             }
-            button.onmouseleave = () => {
-                button.style.filter = 'brightness(1)'
+            dungeonButton.onmouseleave = () => {
+                dungeonButton.style.filter = 'brightness(1)'
             }
-            button.addEventListener('click', runDungeonMacro)
+            dungeonButton.addEventListener('click', () => runDungeonMacro())
 
-            const customButton = document.createElement('button')
-            customButton.id = 'customMacroButton'
-            customButton.textContent = '👀'
-            customButton.style.background = 'linear-gradient(180deg, #ffe08a 0%, #d08b18 55%, #8f5310 100%)'
-            customButton.style.color = '#fff6d6'
-            customButton.style.border = '1px solid #ffcf66'
-            customButton.style.borderRadius = '8px'
-            customButton.style.padding = '4px 12px'
-            customButton.style.fontWeight = 'bold'
-            customButton.style.cursor = 'pointer'
-            customButton.style.textShadow = '0 1px 2px rgba(0,0,0,0.7)'
-            customButton.style.boxShadow = '0 0 10px rgba(255,180,50,0.35), inset 0 1px 0 rgba(255,255,255,0.25)'
-            customButton.style.transition = '0.15s ease'
+            const debugButton = document.createElement('button')
+            debugButton.id = 'debugButton'
+            debugButton.textContent = BUTTON_TEXT_RUN_DEBUG
 
-            customButton.onmouseenter = () => {
-                customButton.style.filter = 'brightness(1.12)'
+            Object.assign(debugButton.style, greenButtonStyle)        
+            debugButton.onmouseenter = () => {
+                debugButton.style.filter = 'brightness(1.12)'
             }
-            customButton.onmouseleave = () => {
-                customButton.style.filter = 'brightness(1)'
+            debugButton.onmouseleave = () => {
+                debugButton.style.filter = 'brightness(1)'
             }
-            customButton.addEventListener('click', toggleDebug)
+            debugButton.addEventListener('click', toggleDebug)
 
             //// =========== ELEMENTS PRIORITY =========== ////
             const STORAGE_KEY = 'elements_priority'
@@ -536,6 +735,35 @@
                 userSelect: 'none',
                 zIndex: '999999'
             })
+
+            // ---------- storage ----------
+            function loadOrder() {
+                try {
+                    const saved = JSON.parse(
+                        localStorage.getItem(STORAGE_KEY)
+                    )
+                    if (!Array.isArray(saved)) {
+                        return DEFAULT_ORDER
+                    }
+                    const mapped = saved
+                    .map(id => DEFAULT_ORDER.find(x => x.id === id))
+                    .filter(Boolean)
+                    if (mapped.length !== DEFAULT_ORDER.length) {
+                        return DEFAULT_ORDER
+                    }
+                    return mapped
+                } catch {
+                    return DEFAULT_ORDER
+                }
+            }
+
+            let elementsOrder = loadOrder()
+            function saveOrder() {
+                localStorage.setItem(
+                    STORAGE_KEY,
+                    JSON.stringify(elementsOrder.map(x => x.id))
+                )
+            }
 
             // ---------- render ----------
             function render() {
@@ -557,7 +785,7 @@
                         fontFamily: 'sans-serif',
                         fontSize: '12px',
                         fontWeight: 'normal',
-                        background: `linear-gradient(to bottom, ${item.dColor}, ${item.color})`,
+                        background: item.background,
                         color: item.textColor || 'white',
                         border: `2px solid ${item.bColor}`,
                         boxSizing: 'border-box',
@@ -620,7 +848,7 @@
             }
             animateGlow()
             // ---------- public API ----------
-            setActiveElements = function(ids) {
+            window.setActiveElements = function(ids) {
                 document
                     .querySelectorAll('#elementsPriorityToolbar > div')
                     .forEach(el => {
@@ -640,6 +868,10 @@
                 })
             }
 
+            window.getElementsPriority = function() {
+                return elementsOrder.map(x => x.id)
+            }
+
             render()
 
             // =========== DAILY ===========
@@ -647,19 +879,9 @@
             const dailyButton = document.createElement('button')
             dailyButton.id = 'dailyButton'
             dailyButton.textContent = BUTTON_TEXT_RUN_CUSTOM
-            Object.assign(dailyButton.style, {
-                background: 'linear-gradient(180deg, #ffe08a 0%, #d08b18 55%, #8f5310 100%)',
-                color: '#fff6d6',
-                border: '1px solid #ffcf66',
-                borderRadius: '8px',
-                padding: '4px 12px',
-                fontWeight: 'bold',
-                cursor: 'pointer',
-                textShadow: '0 1px 2px rgba(0,0,0,0.7)',
-                boxShadow: '0 0 10px rgba(255,180,50,0.35), inset 0 1px 0 rgba(255,255,255,0.25)',
-                transition: '0.15s ease'
-            })
 
+            Object.assign(dailyButton.style, greenButtonStyle)
+            
             dailyButton.onmouseenter = () => {
                 dailyButton.style.filter = 'brightness(1.12)'
             }
@@ -667,6 +889,22 @@
             dailyButton.onmouseleave = () => {
                 dailyButton.style.filter = 'brightness(1)'
             }
+
+            // ---------- macro session status (time since start (reloads)) ----------
+            macroTimeEl = document.createElement('span')
+            macroTimeEl.id = 'macroTimeEl'
+            macroTimeEl.textContent = '0s (0)'
+            Object.assign(macroTimeEl.style, {
+                color: '#fff6d6',
+                fontSize: '12px',
+                padding: '4px 6px',
+                marginLeft: '6px',
+                marginRight: '6px',
+                borderRadius: '6px',
+                border: '1px solid rgb(212,161,110)',
+            })
+
+            startMacroSession(true)
 
             // ---------- popup ----------
 
@@ -676,17 +914,176 @@
                 position: 'fixed',
                 display: 'none',
                 zIndex: '9999999',
-                minWidth: '400px',
-                padding: '12px',
-                border: '1px solid rgba(120,180,255,0.5)',
+                minWidth: '470px',
+                padding: '0',
+                overflow: 'hidden',
+                border: '1px solid rgb(212,161,110)',
                 borderRadius: '10px',
-                background: 'linear-gradient(180deg, rgba(20,30,55,0.98) 0%, rgba(8,12,25,0.98) 100%)',
+                background: 'rgb(14,20,35)',
                 boxShadow: '0 0 18px rgba(0,140,255,0.3)',
                 color: '#d9ecff',
                 fontSize: '14px',
                 fontFamily: 'Trebuchet MS, Verdana, sans-serif',
                 backdropFilter: 'blur(4px)'
             })
+
+            // ---------- section menu (left) + content (right) ----------
+            const dailyPopupBody = document.createElement('div')
+            Object.assign(dailyPopupBody.style, {
+                display: 'flex',
+                alignItems: 'stretch',
+                gap: '0',
+                maxHeight: '800px',
+                overflowY: 'auto',
+                background: 'linear-gradient(to bottom,rgb(14,20,35),rgb(45, 53, 67),rgb(14,20,35))'
+            })
+            dailyPopup.appendChild(dailyPopupBody)
+
+            const dailyPopupMenu = document.createElement('div')
+            Object.assign(dailyPopupMenu.style, {
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0',
+                flex: '0 0 auto',
+                background: 'rgb(13,19,32)'
+            })
+            dailyPopupBody.appendChild(dailyPopupMenu)
+
+            const dailyPopupMenuSplitter = document.createElement('div')
+            Object.assign(dailyPopupMenuSplitter.style, {
+                width: '1px',
+                background: 'linear-gradient(to bottom, transparent, rgb(212,161,110), transparent)'
+            })
+            dailyPopupBody.appendChild(dailyPopupMenuSplitter)
+
+            const dailyPopupContent = document.createElement('div')
+            Object.assign(dailyPopupContent.style, {
+                flex: '1',
+                minWidth: '320px',
+                padding: '12px'
+            })
+            dailyPopupBody.appendChild(dailyPopupContent)
+
+            const dailyPopupSections = []
+            const ACTIVE_MENU_ITEM_TEXT_COLOR = '#fffdf5'
+            const INACTIVE_MENU_ITEM_TEXT_COLOR = 'rgb(239,204,148)'
+
+            function activateDailyPopupSection(section) {
+                dailyPopupSections.forEach(s => {
+                    const active = s === section
+                    s.panel.style.display = active ? 'block' : 'none'
+                    s.menuItem.style.background = active
+                        ? 'linear-gradient(to bottom right, transparent, rgb(50,72,120), rgb(105,103,120))'
+                        : 'transparent'
+                    s.menuItem.style.color = active ? ACTIVE_MENU_ITEM_TEXT_COLOR : INACTIVE_MENU_ITEM_TEXT_COLOR
+                })
+            }
+
+            function makeDailyPopupPanel(label, emoji) {
+                const panel = document.createElement('div')
+                panel.style.display = 'none'
+                dailyPopupContent.appendChild(panel)
+
+                if (dailyPopupSections.length > 0) {
+                    const splitter = document.createElement('div')
+                    Object.assign(splitter.style, {
+                        height: '1px',
+                        width: '100%',
+                        background: 'linear-gradient(to right, transparent, rgb(212,161,110), transparent)'
+                    })
+                    dailyPopupMenu.appendChild(splitter)
+                }
+
+                const menuItem = document.createElement('div')
+                Object.assign(menuItem.style, {
+                    width: '120px',
+                    height: '60px',
+                    boxSizing: 'border-box',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    textAlign: 'center',
+                    padding: '4px',
+                    border: 'none',
+                    background: 'transparent',
+                    color: INACTIVE_MENU_ITEM_TEXT_COLOR,
+                    fontSize: '13px',
+                    fontWeight: 'bold',
+                    cursor: 'pointer',
+                    transition: '0.15s ease',
+                    userSelect: 'none'
+                })
+
+                const menuItemEmoji = document.createElement('div')
+                menuItemEmoji.textContent = emoji
+                Object.assign(menuItemEmoji.style, {
+                    fontSize: '28px',
+                    lineHeight: '1'
+                })
+                menuItem.appendChild(menuItemEmoji)
+
+                const menuItemLabel = document.createElement('div')
+                menuItemLabel.textContent = label
+                menuItem.appendChild(menuItemLabel)
+
+                dailyPopupMenu.appendChild(menuItem)
+
+                const section = { panel, menuItem }
+                menuItem.addEventListener('click', (e) => {
+                    e.stopPropagation()
+                    activateDailyPopupSection(section)
+                })
+                dailyPopupSections.push(section)
+                return panel
+            }
+
+            // =========== DUNGEON ===========
+            const dungeonPanel = makeDailyPopupPanel('Dungeon', '⛏️')
+            const dungeonSectionTitle = document.createElement('div')
+            dungeonSectionTitle.textContent = 'Dungeon'
+            Object.assign(dungeonSectionTitle.style, {
+                fontWeight: 'bold',
+                marginBottom: '8px',
+                color: '#eef7ff',
+                textAlign: 'center'
+            })
+            dungeonPanel.appendChild(dungeonSectionTitle)
+
+            function makeDungeonSettingRow(labelText, control) {
+                const row = document.createElement('div')
+                Object.assign(row.style, {
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    marginBottom: '8px'
+                })
+                const label = document.createElement('span')
+                label.textContent = labelText
+                Object.assign(label.style, {
+                    color: '#bcd6f5',
+                    fontSize: '12px'
+                })
+                row.appendChild(label)
+                row.appendChild(control)
+                return row
+            }
+
+            dungeonPanel.appendChild(makeDungeonSettingRow('Room priority:', elements))
+            dungeonPanel.appendChild(makeDungeonSettingRow('Delays multiplier:', selectFactor))
+            dungeonPanel.appendChild(makeDungeonSettingRow('Stop:', select))
+
+            Object.assign(dungeonButton.style, {
+                width: 'fit-content',
+                display: 'block',
+                marginTop: '2px',
+                marginLeft: 'auto',
+                marginRight: 'auto'
+            })
+            dungeonPanel.appendChild(dungeonButton)
+
+            // =========== DAILY ===========
+            const dailyPanel = makeDailyPopupPanel('Daily tasks', '📅')
             const dailyTitle = document.createElement('div')
             dailyTitle.textContent = 'Daily tasks'
             Object.assign(dailyTitle.style, {
@@ -695,7 +1092,7 @@
                 color: '#eef7ff',
                 textAlign: 'center'
             })
-            dailyPopup.appendChild(dailyTitle)
+            dailyPanel.appendChild(dailyTitle)
             const dailyTasks = [
                 'heroic_chest',
                 'tower',
@@ -736,23 +1133,16 @@
                 dailyCheckboxes[task] = checkbox
                 label.appendChild(checkbox)
                 label.appendChild(document.createTextNode(task))
-                dailyPopup.appendChild(label)
+                dailyPanel.appendChild(label)
             })
             const dailyStartButton = document.createElement('button')
-            dailyStartButton.textContent = 'Start'
-            Object.assign(dailyStartButton.style, {
-                width: '100%',
+            dailyStartButton.textContent = 'Start daily tasks'
+            Object.assign(dailyStartButton.style, greenButtonStyle, {
+                width: 'fit-content',
+                display: 'block',
                 marginTop: '10px',
-                background: 'linear-gradient(180deg, #8bd58b 0%, #3b9144 55%, #216128 100%)',
-                color: '#efffec',
-                border: '1px solid #7ee889',
-                borderRadius: '8px',
-                padding: '5px 12px',
-                fontWeight: 'bold',
-                cursor: 'pointer',
-                textShadow: '0 1px 2px rgba(0,0,0,0.7)',
-                boxShadow: '0 0 10px rgba(80,220,100,0.3), inset 0 1px 0 rgba(255,255,255,0.25)',
-                transition: '0.15s ease'
+                marginLeft: 'auto',
+                marginRight: 'auto'
             })
 
             dailyStartButton.onmouseenter = () => {
@@ -772,18 +1162,10 @@
                 dailyPopup.style.display = 'none'
                 await runDailyTasks(params)
             })
-            dailyPopup.appendChild(dailyStartButton)
+            dailyPanel.appendChild(dailyStartButton)
 
-            // ---------- splitter ----------
-            const repeatClickSplitter = document.createElement('hr')
-            Object.assign(repeatClickSplitter.style, {
-                margin: '10px 0',
-                border: 'none',
-                borderTop: '1px solid rgba(120,180,255,0.35)'
-            })
-            dailyPopup.appendChild(repeatClickSplitter)
-
-            // ---------- repeat click ----------
+            // =========== REPEAT CLICKS ===========
+            const repeatClickPanel = makeDailyPopupPanel('Repeat clicks', '🔁')
             const repeatClickTitle = document.createElement('div')
             repeatClickTitle.textContent = 'Repeat clicks'
             Object.assign(repeatClickTitle.style, {
@@ -792,30 +1174,23 @@
                 color: '#eef7ff',
                 textAlign: 'center'
             })
-            dailyPopup.appendChild(repeatClickTitle)
+            repeatClickPanel.appendChild(repeatClickTitle)
 
-            const repeatClickRow = document.createElement('div')
-            Object.assign(repeatClickRow.style, {
+            const repeatClickColumn = document.createElement('div')
+            Object.assign(repeatClickColumn.style, {
                 display: 'flex',
-                alignItems: 'center',
-                gap: '6px'
+                flexDirection: 'column',
+                gap: '8px'
             })
 
             const repeatClickButton = document.createElement('button')
             repeatClickButton.id = 'repeatClickButton'
             repeatClickButton.textContent = BUTTON_TEXT_RUN_REPEAT_CLICK
-            Object.assign(repeatClickButton.style, {
-                flex: '1',
-                background: 'linear-gradient(180deg, #ffe08a 0%, #d08b18 55%, #8f5310 100%)',
-                color: '#fff6d6',
-                border: '1px solid #ffcf66',
-                borderRadius: '8px',
-                padding: '5px 8px',
-                fontWeight: 'bold',
-                cursor: 'pointer',
-                textShadow: '0 1px 2px rgba(0,0,0,0.7)',
-                boxShadow: '0 0 10px rgba(255,180,50,0.35), inset 0 1px 0 rgba(255,255,255,0.25)',
-                transition: '0.15s ease'
+            Object.assign(repeatClickButton.style, greenButtonStyle, {
+                width: 'fit-content',
+                display: 'block',
+                marginLeft: 'auto',
+                marginRight: 'auto'
             })
             repeatClickButton.onmouseenter = () => {
                 repeatClickButton.style.filter = 'brightness(1.12)'
@@ -829,6 +1204,7 @@
                 Object.assign(wrapper.style, {
                     display: 'flex',
                     alignItems: 'center',
+                    justifyContent: 'space-between',
                     gap: '4px',
                     color: '#bcd6f5',
                     fontSize: '12px'
@@ -841,16 +1217,10 @@
                 const input = document.createElement('input')
                 input.type = 'text'
                 input.title = title
-                input.value = restoreInt(storageKey, defaultValue)
-                Object.assign(input.style, {
-                    width: '56px',
-                    borderRadius: '6px',
-                    border: '1px solid rgba(120,180,255,0.5)',
-                    background: 'rgba(255,255,255,0.08)',
-                    color: '#eef7ff',
-                    padding: '4px 6px',
-                    textAlign: 'center'
-                })
+                input.value = Number(localStorage.getItem(storageKey) || defaultValue)
+                Object.assign(input.style, inputStyle)
+                input.style.textAlign = 'center'
+                input.style.width = '56px'
                 wrapper.appendChild(input)
 
                 return { wrapper, input }
@@ -861,10 +1231,10 @@
             const repeatClickCountInput = repeatClickCount.input
             const repeatClickDelayInput = repeatClickDelay.input
 
-            repeatClickRow.appendChild(repeatClickButton)
-            repeatClickRow.appendChild(repeatClickCount.wrapper)
-            repeatClickRow.appendChild(repeatClickDelay.wrapper)
-            dailyPopup.appendChild(repeatClickRow)
+            repeatClickColumn.appendChild(repeatClickCount.wrapper)
+            repeatClickColumn.appendChild(repeatClickDelay.wrapper)
+            repeatClickColumn.appendChild(repeatClickButton)
+            repeatClickPanel.appendChild(repeatClickColumn)
 
             const repeatClickHint = document.createElement('div')
             repeatClickHint.innerHTML = 'Click "Start recording", then make the clicks in the game you want repeated.<br>Click "Stop recording" when done — the whole sequence replays N times,<br>with a D ms delay between repeats<br><i>ps: delays between the recorded clicks themselves are captured automatically</i>.'
@@ -874,7 +1244,7 @@
                 fontSize: '11px',
                 lineHeight: '1.4'
             })
-            dailyPopup.appendChild(repeatClickHint)
+            repeatClickPanel.appendChild(repeatClickHint)
 
             // ---------- stop recording button (shown under the Run... button while recording) ----------
             const stopRecordingButton = document.createElement('button')
@@ -952,8 +1322,8 @@
 
                 const repeats = parseInt(repeatClickCountInput.value, 10) || 1000
                 const delay = parseInt(repeatClickDelayInput.value, 10) || 300
-                storeInt('repeatClickCount', repeats)
-                storeInt('repeatClickDelay', delay)
+                localStorage.setItem('repeatClickCount', repeats)
+                localStorage.setItem('repeatClickDelay', delay)
 
                 setActivated(repeatClickButton, true, BUTTON_TEXT_ARMED_REPEAT_CLICK, BUTTON_TEXT_RUN_REPEAT_CLICK)
                 setActivated(dailyButton, true, BUTTON_TEXT_STOP_CUSTOM, BUTTON_TEXT_RUN_CUSTOM)
@@ -973,16 +1343,8 @@
                 }
             })
 
-            // ---------- splitter ----------
-            const frontierSplitter = document.createElement('hr')
-            Object.assign(frontierSplitter.style, {
-                margin: '10px 0',
-                border: 'none',
-                borderTop: '1px solid rgba(120,180,255,0.35)'
-            })
-            dailyPopup.appendChild(frontierSplitter)
-
-            // ---------- eternal frontier ----------
+            // =========== ETERNAL FRONTIER ===========
+            const frontierPanel = makeDailyPopupPanel('Eternal frontier', '⚔️')
             const frontierTitle = document.createElement('div')
             frontierTitle.textContent = 'Eternal frontier'
             Object.assign(frontierTitle.style, {
@@ -991,7 +1353,7 @@
                 color: '#eef7ff',
                 textAlign: 'center'
             })
-            dailyPopup.appendChild(frontierTitle)
+            frontierPanel.appendChild(frontierTitle)
 
             function makeFrontierFieldWrapper() {
                 const wrapper = document.createElement('div')
@@ -1015,17 +1377,6 @@
                 return label
             }
 
-            const frontierFieldStyle = {
-                width: '100%',
-                boxSizing: 'border-box',
-                borderRadius: '6px',
-                border: '1px solid rgba(120,180,255,0.5)',
-                background: 'rgba(255,255,255,0.08)',
-                color: '#eef7ff',
-                padding: '4px 6px',
-                transition: 'background-color 0.2s ease, border-color 0.2s ease'
-            }
-
             function computeFrontierGroupsFromTeams(teamsCount) {
                 return `1-${teamsCount - 2},${teamsCount - 1}-${teamsCount}`
             }
@@ -1046,10 +1397,10 @@
             frontierAttemptsInput.min = '1'
             frontierAttemptsInput.step = '1'
             frontierAttemptsInput.title = frontierAttemptsHint
-            frontierAttemptsInput.value = restoreInt(FRONTIER_ATTEMPTS_STORAGE_KEY, 3)
+            frontierAttemptsInput.value = Number(localStorage.getItem(FRONTIER_ATTEMPTS_STORAGE_KEY) || 3)
             Object.assign(frontierAttemptsInput.style, frontierFieldStyle)
             frontierAttemptsWrapper.appendChild(frontierAttemptsInput)
-            dailyPopup.appendChild(frontierAttemptsWrapper)
+            frontierPanel.appendChild(frontierAttemptsWrapper)
 
             // ---------- teams ----------
             const frontierTeamsHint = 'Number of your teams'
@@ -1062,15 +1413,19 @@
                 gap: '6px'
             })
             const frontierStepperButtonStyle = {
-                width: '28px',
-                height: '26px',
+                width: '32px',
+                height: '32px',
+                minHeight: '32px',
                 flex: '0 0 auto',
-                borderRadius: '6px',
-                border: '1px solid rgba(120,180,255,0.5)',
-                background: 'rgba(255,255,255,0.08)',
-                color: '#eef7ff',
+                padding: '0', 
+                borderRadius: '16px',
+                background: 'linear-gradient(to bottom, rgb(56,72,95) 0%, rgb(32,48,64) 100%)',
+                border: '2px solid rgb(212,161,110)',
+                color: 'rgb(212,161,110)',
+                fontSize: '16px', 
+                fontWeight: 'bold',
                 cursor: 'pointer',
-                fontWeight: 'bold'
+                transition: '0.15s ease'
             }
             const frontierTeamsDecButton = document.createElement('button')
             frontierTeamsDecButton.type = 'button'
@@ -1081,7 +1436,7 @@
             frontierTeamsInput.min = '1'
             frontierTeamsInput.step = '1'
             frontierTeamsInput.title = frontierTeamsHint
-            frontierTeamsInput.value = restoreInt(FRONTIER_TEAMS_STORAGE_KEY, 10)
+            frontierTeamsInput.value = Number(localStorage.getItem(FRONTIER_TEAMS_STORAGE_KEY) || 10)
             Object.assign(frontierTeamsInput.style, frontierFieldStyle, { textAlign: 'center' })
             const frontierTeamsIncButton = document.createElement('button')
             frontierTeamsIncButton.type = 'button'
@@ -1104,7 +1459,7 @@
             frontierTeamsRow.appendChild(frontierTeamsInput)
             frontierTeamsRow.appendChild(frontierTeamsIncButton)
             frontierTeamsWrapper.appendChild(frontierTeamsRow)
-            dailyPopup.appendChild(frontierTeamsWrapper)
+            frontierPanel.appendChild(frontierTeamsWrapper)
 
             // ---------- groups ----------
             const frontierGroupsHint = 'Shuffling groups. Teams will be shuffled only within specified range (1-4 means two teams will be shuffled within the first 4 teams)'
@@ -1118,7 +1473,7 @@
             frontierInput.value = storedFrontierGroups || computeFrontierGroupsFromTeams(parseInt(frontierTeamsInput.value, 10))
             Object.assign(frontierInput.style, frontierFieldStyle)
             frontierGroupsWrapper.appendChild(frontierInput)
-            dailyPopup.appendChild(frontierGroupsWrapper)
+            frontierPanel.appendChild(frontierGroupsWrapper)
 
             function flashInvalidInput(input) {
                 const originalBorder = input.style.border
@@ -1134,18 +1489,11 @@
 
             const frontierStartButton = document.createElement('button')
             frontierStartButton.textContent = 'Start frontier'
-            Object.assign(frontierStartButton.style, {
-                width: '100%',
-                background: 'linear-gradient(180deg, #8bd58b 0%, #3b9144 55%, #216128 100%)',
-                color: '#efffec',
-                border: '1px solid #7ee889',
-                borderRadius: '8px',
-                padding: '5px 12px',
-                fontWeight: 'bold',
-                cursor: 'pointer',
-                textShadow: '0 1px 2px rgba(0,0,0,0.7)',
-                boxShadow: '0 0 10px rgba(80,220,100,0.3), inset 0 1px 0 rgba(255,255,255,0.25)',
-                transition: '0.15s ease'
+            Object.assign(frontierStartButton.style, greenButtonStyle, {
+                width: 'fit-content',
+                display: 'block',
+                marginLeft: 'auto',
+                marginRight: 'auto'
             })
             frontierStartButton.onmouseenter = () => {
                 frontierStartButton.style.filter = 'brightness(1.12)'
@@ -1153,7 +1501,7 @@
             frontierStartButton.onmouseleave = () => {
                 frontierStartButton.style.filter = 'brightness(1)'
             }
-            dailyPopup.appendChild(frontierStartButton)
+            frontierPanel.appendChild(frontierStartButton)
 
             frontierStartButton.addEventListener('click', (e) => {
                 e.stopPropagation()
@@ -1176,18 +1524,134 @@
                     return
                 }
 
-                storeInt(FRONTIER_ATTEMPTS_STORAGE_KEY, attempts)
-                storeInt(FRONTIER_TEAMS_STORAGE_KEY, teams)
+                localStorage.setItem(FRONTIER_ATTEMPTS_STORAGE_KEY, attempts)
+                localStorage.setItem(FRONTIER_TEAMS_STORAGE_KEY, teams)
                 localStorage.setItem(FRONTIER_GROUPS_STORAGE_KEY, frontierInput.value)
                 dailyPopup.style.display = 'none'
                 runFrontier(pairs, attempts, teams)
             })
 
+            // =========== DELAYS ===========
+            const delaysPanel = makeDailyPopupPanel('Delays', '⏱️')
+            const delaysTitle = document.createElement('div')
+            delaysTitle.textContent = 'Delays'
+            Object.assign(delaysTitle.style, {
+                fontWeight: 'bold',
+                marginBottom: '8px',
+                color: '#eef7ff',
+                textAlign: 'center'
+            })
+            delaysPanel.appendChild(delaysTitle)
+
+            const DELAY_SETTINGS = [
+                { key: 'GAME_LOAD_TIMEOUT', label: 'Game initialization min time', defaultValue: 10000, getValue: () => GAME_LOAD_TIMEOUT, setValue: v => { GAME_LOAD_TIMEOUT = v } },
+                { key: 'DELAY_CHECK_CYCLE', label: 'Max wait time until any required screen appears', defaultValue: 5000, getValue: () => DELAY_CHECK_CYCLE, setValue: v => { DELAY_CHECK_CYCLE = v } },
+                { key: 'DELAY_AFTER_CLICKING_GUILD', label: 'Delay after clicking on "Guild"', defaultValue: 5000, getValue: () => DELAY_AFTER_CLICKING_GUILD, setValue: v => { DELAY_AFTER_CLICKING_GUILD = v } },
+                { key: 'DELAY_AFTER_CLICKING_DUNGEON', label: 'Delay after clicking on "Dungeon"', defaultValue: 5000, getValue: () => DELAY_AFTER_CLICKING_DUNGEON, setValue: v => { DELAY_AFTER_CLICKING_DUNGEON = v } },
+                { key: 'EXTRA_GATE_DELAY_FIRST_FLOOR', label: 'Extra delay for the first floor gate', defaultValue: 0, getValue: () => EXTRA_GATE_DELAY_FIRST_FLOOR, setValue: v => { EXTRA_GATE_DELAY_FIRST_FLOOR = v } },
+                { key: 'EXTRA_WALK_DELAY_FIRST_FLOOR', label: 'Extra walk delay for the first floor', defaultValue: 2000, getValue: () => EXTRA_WALK_DELAY_FIRST_FLOOR, setValue: v => { EXTRA_WALK_DELAY_FIRST_FLOOR = v } },
+                { key: 'EXTRA_FLOOR_DELAY_FIRST_FLOOR', label: 'Extra floor delay for the first floor', defaultValue: 3000, getValue: () => EXTRA_FLOOR_DELAY_FIRST_FLOOR, setValue: v => { EXTRA_FLOOR_DELAY_FIRST_FLOOR = v } },
+                { key: 'EXTRA_DELAY_BEFORE_CONFIRM_BATTLE', label: 'Extra delay after HP check', defaultValue: 0, getValue: () => EXTRA_DELAY_BEFORE_CONFIRM_BATTLE, setValue: v => { EXTRA_DELAY_BEFORE_CONFIRM_BATTLE = v } },
+                { key: 'DELAY_FOR_TITANS_WALK', label: 'Extra delay after battle confirmation', defaultValue: 500, getValue: () => DELAY_FOR_TITANS_WALK, setValue: v => { DELAY_FOR_TITANS_WALK = v } },
+                { key: 'DELAY_AFTER_CLICKING_AUTOBATTLE', label: 'Min battle duration', defaultValue: 500, getValue: () => DELAY_AFTER_CLICKING_AUTOBATTLE, setValue: v => { DELAY_AFTER_CLICKING_AUTOBATTLE = v } },
+                { key: 'DELAY_AFTER_GATE_CLICKED', label: 'Extra delay after clicking on lvl gate', defaultValue: 500, getValue: () => DELAY_AFTER_GATE_CLICKED, setValue: v => { DELAY_AFTER_GATE_CLICKED = v } },
+                { key: 'DELAY_AFTER_ROOM_CLICKED', label: 'Extra delay after chosing a correct room', defaultValue: 0, getValue: () => DELAY_AFTER_ROOM_CLICKED, setValue: v => { DELAY_AFTER_ROOM_CLICKED = v } },
+                { key: 'DELAY_AFTER_CLICKING_FLOOR_REWARD', label: 'Extra delay after clicking on ¨finish floor¨', defaultValue: 1000, getValue: () => DELAY_AFTER_CLICKING_FLOOR_REWARD, setValue: v => { DELAY_AFTER_CLICKING_FLOOR_REWARD = v } },
+                { key: 'DELAY_AFTER_FINISHING_FLOOR', label: 'Extra delay after accepting floor reward', defaultValue: 1000, getValue: () => DELAY_AFTER_FINISHING_FLOOR, setValue: v => { DELAY_AFTER_FINISHING_FLOOR = v } }
+            ]
+
+            DELAY_SETTINGS.forEach(setting => {
+                const input = document.createElement('input')
+                input.type = 'number'
+                input.step = '1'
+                input.min = '0'
+                input.value = setting.getValue()
+                Object.assign(input.style, inputStyle)
+                input.style.textAlign = 'center'
+                input.style.width = '70px'
+                setting.input = input
+
+                const row = document.createElement('div')
+                Object.assign(row.style, {
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '8px',
+                    marginBottom: '6px'
+                })
+                const label = document.createElement('span')
+                label.textContent = setting.label
+                label.title = setting.key
+                Object.assign(label.style, {
+                    flex: '1',
+                    color: '#bcd6f5',
+                    fontSize: '11px'
+                })
+                row.appendChild(label)
+                row.appendChild(input)
+                delaysPanel.appendChild(row)
+            })
+
+            const delaysButtonsRow = document.createElement('div')
+            Object.assign(delaysButtonsRow.style, {
+                display: 'flex',
+                justifyContent: 'center',
+                gap: '8px',
+                marginTop: '10px'
+            })
+
+            const delaysSaveButton = document.createElement('button')
+            delaysSaveButton.textContent = 'Save'
+            Object.assign(delaysSaveButton.style, greenButtonStyle, {
+                width: 'fit-content'
+            })
+            delaysSaveButton.onmouseenter = () => {
+                delaysSaveButton.style.filter = 'brightness(1.12)'
+            }
+            delaysSaveButton.onmouseleave = () => {
+                delaysSaveButton.style.filter = 'brightness(1)'
+            }
+            delaysSaveButton.addEventListener('click', (e) => {
+                e.stopPropagation()
+                DELAY_SETTINGS.forEach(setting => {
+                    const value = parseInt(setting.input.value, 10) || 0
+                    setting.setValue(value)
+                    localStorage.setItem(setting.key, value)
+                    setting.input.value = value
+                })
+            })
+            delaysButtonsRow.appendChild(delaysSaveButton)
+
+            const delaysResetButton = document.createElement('button')
+            delaysResetButton.textContent = 'Reset to defaults'
+            Object.assign(delaysResetButton.style, greenButtonStyle, {
+                width: 'fit-content'
+            })
+            delaysResetButton.onmouseenter = () => {
+                delaysResetButton.style.filter = 'brightness(1.12)'
+            }
+            delaysResetButton.onmouseleave = () => {
+                delaysResetButton.style.filter = 'brightness(1)'
+            }
+            delaysResetButton.addEventListener('click', (e) => {
+                e.stopPropagation()
+                DELAY_SETTINGS.forEach(setting => {
+                    setting.setValue(setting.defaultValue)
+                    localStorage.setItem(setting.key, setting.defaultValue)
+                    setting.input.value = setting.defaultValue
+                })
+            })
+            delaysButtonsRow.appendChild(delaysResetButton)
+
+            delaysPanel.appendChild(delaysButtonsRow)
+
+            activateDailyPopupSection(dailyPopupSections[0])
+
             document.body.appendChild(dailyPopup)
 
             dailyButton.addEventListener('click', async (e) => {
                 e.stopPropagation()
-                if (isRunningMacro == MACRO_DAILY || isRunningMacro == MACRO_FRONTIER) {
+                if (isRunningMacro != null && isRunningMacro != MACRO_REPEAT_CLICK) {
                     await releaseWakeLock()
                     setActivated(dailyButton, false, BUTTON_TEXT_STOP_CUSTOM, BUTTON_TEXT_RUN_CUSTOM)
                     isRunningMacro = null
@@ -1209,7 +1673,7 @@
 
                 if (dailyPopup.style.display === 'none') {
                     const rect = dailyButton.getBoundingClientRect()
-                    dailyPopup.style.left = `${rect.right - 400}px`
+                    dailyPopup.style.left = `${rect.left}px`
                     dailyPopup.style.top = `${rect.bottom + 6}px`
                     dailyPopup.style.display = 'block'
                 } else {
@@ -1225,19 +1689,9 @@
             // ---------- logs button + popup ----------
             const logsButton = document.createElement('button')
             logsButton.id = 'logsButton'
-            logsButton.textContent = '📋'
-            Object.assign(logsButton.style, {
-                background: 'linear-gradient(180deg, #ffe08a 0%, #d08b18 55%, #8f5310 100%)',
-                color: '#fff6d6',
-                border: '1px solid #ffcf66',
-                borderRadius: '8px',
-                padding: '4px 12px',
-                fontWeight: 'bold',
-                cursor: 'pointer',
-                textShadow: '0 1px 2px rgba(0,0,0,0.7)',
-                boxShadow: '0 0 10px rgba(255,180,50,0.35), inset 0 1px 0 rgba(255,255,255,0.25)',
-                transition: '0.15s ease'
-            })
+            logsButton.textContent = '📋 Logs'
+            
+            Object.assign(logsButton.style, blueButtonStyle)
             logsButton.onmouseenter = () => {
                 logsButton.style.filter = 'brightness(1.12)'
             }
@@ -1277,7 +1731,8 @@
             const copyErrorsButton = document.createElement('button')
             copyErrorsButton.textContent = 'Copy 📋'
             Object.assign(copyErrorsButton.style, {
-                width: '100%',
+                width: 'fit-content',
+                display: 'block',
                 background: 'linear-gradient(180deg, #8bd0ff 0%, #2f7fc4 55%, #1a4f80 100%)',
                 color: '#eef7ff',
                 border: '1px solid #7ec8f2',
@@ -1288,7 +1743,9 @@
                 textShadow: '0 1px 2px rgba(0,0,0,0.7)',
                 boxShadow: '0 0 10px rgba(80,180,255,0.3), inset 0 1px 0 rgba(255,255,255,0.25)',
                 transition: '0.15s ease',
-                marginBottom: '8px'
+                marginBottom: '8px',
+                marginLeft: 'auto',
+                marginRight: 'auto'
             })
             copyErrorsButton.onmouseenter = () => {
                 copyErrorsButton.style.filter = 'brightness(1.12)'
@@ -1318,6 +1775,20 @@
                 navigator.clipboard.writeText(text)
             })
             logsPopup.appendChild(errorContainerEl)
+
+            if (PERSIST_LOGS) {
+                try {
+                    const savedLogs = JSON.parse(localStorage.getItem(PERSISTED_LOGS_KEY))
+                    if (Array.isArray(savedLogs)) {
+                        savedLogs.forEach(text => {
+                            const span = document.createElement('div')
+                            span.textContent = text
+                            errorContainerEl.appendChild(span)
+                        })
+                        errorContainerEl.scrollTop = errorContainerEl.scrollHeight
+                    }
+                } catch {}
+            }
 
             document.body.appendChild(logsPopup)
 
@@ -1353,21 +1824,16 @@
                 }
             }
 
-            container.appendChild(document.createTextNode('Priority:'))
-            container.appendChild(elements)
-            container.appendChild(document.createTextNode('Delays:'))
-            container.appendChild(selectFactor)
-            container.appendChild(document.createTextNode('Stop:'))
-            container.appendChild(select)
-            container.appendChild(button)
             container.appendChild(dailyButton)
-            container.appendChild(customButton)
+            container.appendChild(macroTimeEl)
+            container.appendChild(debugButton)
             container.appendChild(logsButton)
 
             const header = document.getElementById('header')
             header.insertBefore(container, header.children[1])
 
-            setActivated(dungeonMacroButton, false, BUTTON_TEXT_STOP_DUNGEON, BUTTON_TEXT_RUN_DUNGEON)
+            setActivated(dailyButton, false, BUTTON_TEXT_STOP_CUSTOM, BUTTON_TEXT_RUN_CUSTOM)
+            setActivated(debugButton, DEBUG_CLICKS, BUTTON_TEXT_STOP_DEBUG, BUTTON_TEXT_RUN_DEBUG)
         }
 
         let lastPixel = [0,0,0]
@@ -1484,12 +1950,12 @@
                         document.title = error
                         addError(error)
                         if (isRunningMacro == macro) {
-                            setActivated(dungeonMacroButton, false, BUTTON_TEXT_STOP_DUNGEON, BUTTON_TEXT_RUN_DUNGEON)
+                            setActivated(dailyButton, false, BUTTON_TEXT_STOP_CUSTOM, BUTTON_TEXT_RUN_CUSTOM)
                             isRunningMacro = null
                             await releaseWakeLock()
 
                             localStorage.setItem("last_macro", MACRO_FRONTIER)
-                            location.reload()
+                            reloadPage()
                         }
                         return
                     }
@@ -1534,7 +2000,7 @@
                     if (colorsAreSame(pixel, color, threshold)) {
                         document.title = "failed " + lvlTitle + ": " + title
                         addError("failed waiting " + title + " [" + pixel[0] + "," + pixel[1] +","+ pixel[2] + "] != [" + color[0] +","+ color[1]+","+ color[2] + "]")
-                        location.reload()
+                        reloadPage()
                         break
                     }
                 } else if (actionType == actionWaitForColor) {
@@ -1564,7 +2030,7 @@
                                 document.title = "skipped " + lvlTitle + ": " + title
                                 addError("skipped waiting " + lvlTitle + ": " + title + " [" + pixel[0] + "," + pixel[1] +","+ pixel[2] + "] != [" + color[0] +","+ color[1]+","+ color[2] + "]")
                                 if (RELOAD_PAGE_ON_FAILURE) {
-                                    location.reload()
+                                    reloadPage()
                                 }
                                 break
                             }
@@ -1573,11 +2039,13 @@
                 } else if (actionType == actionChooseRoom) {
                     let leftPixel = await readPixelOnDraw(gameArea.width * x * canvasScaleX,gameArea.height * y * canvasScaleY)
                     let leftCategory = getColorCategory(leftPixel)
-                    
+                    let leftColor = `rgb(${leftPixel[0]}, ${leftPixel[1]}, ${leftPixel[2]})`
+
                     let rightPixel = await readPixelOnDraw(gameArea.width * altX * canvasScaleX,gameArea.height * y * canvasScaleY)
                     let rightCategory = getColorCategory(rightPixel)
-                    
-                    const priority = getElementsPriority()
+                    let rightColor = `rgb(${rightPixel[0]}, ${rightPixel[1]}, ${rightPixel[2]})`
+
+                    const priority = window.getElementsPriority()
                     const chooseRight = priority.indexOf(rightCategory) <= priority.indexOf(leftCategory)
                     if (chooseRight) {
                         skipActions = 1
@@ -1765,6 +2233,7 @@
                 return
             }
             isRunningMacro = MACRO_REPEAT_CLICK
+            startMacroSession(false)
             setActivated(repeatClickButton, true, BUTTON_TEXT_STOP_REPEAT_CLICK, BUTTON_TEXT_RUN_REPEAT_CLICK)
             await enableWakeLock()
 
@@ -1783,43 +2252,29 @@
             setActivated(dailyButton, false, BUTTON_TEXT_STOP_CUSTOM, BUTTON_TEXT_RUN_CUSTOM)
         }
 
-        function storeInt(key, value) {
-            localStorage.setItem(key, value)
-        }
-
-        function storeFloat(key, value) {
-            localStorage.setItem(key, value)
-        }
-
-        function restoreInt(key, defaultValue = 0) {
-            return Number(localStorage.getItem(key) || defaultValue)
-        }
-
-        function restoreFloat(key, defaultValue = 0.0) {
-            return Number(localStorage.getItem(key) || defaultValue)
-        }
-
         let fromHomePage = false
         // Dungeon MACRO
-        async function runDungeonMacro() {
+        async function runDungeonMacro(isResume = false) {
             if (isRunningMacro == MACRO_DUNGEON) {
                 isRunningMacro = null
-                setActivated(dungeonMacroButton, false, BUTTON_TEXT_STOP_DUNGEON, BUTTON_TEXT_RUN_DUNGEON)
+                setActivated(dailyButton, false, BUTTON_TEXT_STOP_CUSTOM, BUTTON_TEXT_RUN_CUSTOM)
                 await releaseWakeLock()
                 return
             }
             localStorage.setItem("last_macro", MACRO_DUNGEON)
-            setActivated(dungeonMacroButton, true, BUTTON_TEXT_STOP_DUNGEON, BUTTON_TEXT_RUN_DUNGEON)
+
+            setActivated(dailyButton, true, BUTTON_TEXT_STOP_MACRO + MACRO_DUNGEON, BUTTON_TEXT_RUN_CUSTOM)
             isRunningMacro = MACRO_DUNGEON
+            startMacroSession(isResume)
             await enableWakeLock()
 
             // load settings
             const floors = MAX_FLOORS
             delayFactor = parseFloat(document.getElementById('delayFactor').value) || 1.0
             const hpLimit = parseInt(document.getElementById('stopHPLimit').value, 10) || 0
-            storeFloat("delayFactor", delayFactor)
-            storeInt("maxFloors", floors)
-            storeInt("stopHPLimit", hpLimit)
+            localStorage.setItem("delayFactor", delayFactor)
+            localStorage.setItem("maxFloors", floors)
+            localStorage.setItem("stopHPLimit", hpLimit)
 
             // init coordinate system
             gameArea = gameCanvas.getBoundingClientRect()
@@ -1885,7 +2340,7 @@
                 checkHP = {x: 0, xx: titansHP, y: 0.461, color: [56,199,28], actionType: actionInterruptIfNotColor, title: "Check titans HP", threshold: 20}
             }
 
-            const confirmBattle = {x: 0.641372, y: 0.822323, delay: 0, actionType: actionClick, title: "clicking on confirm battle result"}
+            const confirmBattle = {x: 0.641372, y: 0.822323, delay: DELAY_FOR_TITANS_WALK, actionType: actionClick, title: "clicking on confirm battle result"}
 
             // ======= dungeon floor finished symbol =======
             const waitForFloor1Done = {x: 0.3163664839467502, y: 0.1320754716981132, color: [18,21,26], delay: DELAY_CHECK_CYCLE, actionType: actionWaitForColor, title: "waiting for floor1 final scene"}
@@ -1897,22 +2352,15 @@
 
             // ======= dungeon floor finished popup ========
             const waitForFloorConfirm = {x: 0.5, y: 0.5, color: [22,12,8], delay: DELAY_CHECK_CYCLE, actionType: actionWaitForColor, title: "waiting for floor confirmation popup"}
-            const floorConfirm = {x: 0.635, y: 0.697, delay: 0, actionType: actionClick, title: "clicking on floor confirmation popup"}
+            const floorConfirm = {x: 0.635, y: 0.697, delay: DELAY_AFTER_FINISHING_FLOOR, actionType: actionClick, title: "clicking on floor confirmation popup"}
 
 
             // ======= speed up titan walk =========
             const fastRightGateTitle = "Fast right gate"
-            let fastRightGateActions = [{x: 0.995370, y: 0.389100, actionType: actionClick, delay: 50}]
+            let fastRightGateActions = [{x: 0.995370, y: 0.389100, actionType: actionClick, delay: 100}]
             for (let i=0; i<10; i++) {
                 fastRightGateActions.push({x: 0.502315, y: 0.126743, actionType: actionJumpIf, color: [20,17,4], threshold: 15, title: fastRightGateTitle, jumpTitle: roomSelectionTitle})
-                fastRightGateActions.push({x: 0.995370, y: 0.389100, actionType: actionClick, delay: 50})
-            }
-
-            const fast6thGateTitle = "Fast 6th gate"
-            let fast6thGateActions = [{x: 0.005370, y: 0.609100, actionType: actionClick, delay: 50}]
-            for (let i=0; i<10; i++) {
-                fast6thGateActions.push({x: 0.502315, y: 0.126743, actionType: actionJumpIf, color: [20,17,4], threshold: 15, title: fast6thGateTitle, jumpTitle: roomSelectionTitle})
-                fast6thGateActions.push({x: 0.005370, y: 0.609100, actionType: actionClick, delay: 50})
+                fastRightGateActions.push({x: 0.995370, y: 0.389100, actionType: actionClick, delay: 100})
             }
 
             const fastLeftGateTitle = "Fast left gate"
@@ -1921,14 +2369,6 @@
                 fastLeftGateActions.push({x: 0.502315, y: 0.126743, actionType: actionJumpIf, color: [20,17,4], threshold: 15, title: fastLeftGateTitle, jumpTitle: roomSelectionTitle})
                 fastLeftGateActions.push({x: 0.005370, y: 0.389100, actionType: actionClick, delay: 50})
             }
-
-            const fast1stGateTitle = "Fast 1st gate"
-            let fast1stGateActions = [{x: 0.995370, y: 0.600000, actionType: actionClick, delay: 50}]
-            for (let i=0; i<10; i++) {
-                fast1stGateActions.push({x: 0.502315, y: 0.126743, actionType: actionJumpIf, color: [20,17,4], threshold: 15, title: fast1stGateTitle, jumpTitle: roomSelectionTitle})
-                fast1stGateActions.push({x: 0.995370, y: 0.600000, actionType: actionClick, delay: 50})
-            }
-
 
             // ======== screen detection for the first floor =========
             const jumpToRightGate = {x :0.6703741152679474, y:0.11393805309734513, color: [29,37,83], delay: DELAY_CHECK_CYCLE, actionType: actionJumpIf, title: gateRight.title}
@@ -1968,7 +2408,7 @@
             }
 
             const confirmBattleDelay = {actionType: actionDelay, delay: EXTRA_DELAY_BEFORE_CONFIRM_BATTLE, title: "Waiting for confirm battle"}
-            const battleActions = [waitForBattlefield, autoBattle, waitForConfirmBattle, checkHP, confirmBattleDelay, confirmBattle, delay(DELAY_FOR_TITANS_WALK)]
+            const battleActions = [waitForBattlefield, autoBattle, waitForConfirmBattle, checkHP, confirmBattleDelay, confirmBattle]
             const initialFloorRooms = [checkRoomColors, roomLeft, roomRight, roomMid]
 
             await runActions([
@@ -1983,7 +2423,7 @@
                 jumpToLeftGate, jumpToRightGate,
                 gateLeft, delay(EXTRA_GATE_DELAY_FIRST_FLOOR), ...initialFloorRooms, ...battleActions, delay(EXTRA_WALK_DELAY_FIRST_FLOOR),
                 jumpToFloor1, jumpToMidGate,
-                floor1Done, waitForFloorConfirm, floorConfirm, delay(DELAY_AFTER_FINISHING_FLOOR), delay(EXTRA_FLOOR_DELAY_FIRST_FLOOR),
+                floor1Done, waitForFloorConfirm, floorConfirm, delay(EXTRA_FLOOR_DELAY_FIRST_FLOOR),
                 gateLeft, delay(EXTRA_GATE_DELAY_FIRST_FLOOR), ...initialFloorRooms, ...battleActions, delay(EXTRA_WALK_DELAY_FIRST_FLOOR),
                 gateMid, delay(EXTRA_GATE_DELAY_FIRST_FLOOR), ...initialFloorRooms, ...battleActions, delay(EXTRA_WALK_DELAY_FIRST_FLOOR),
                 jumpToMidGate, jumpToRightGate,
@@ -1991,35 +2431,35 @@
                 jumpToMidGate, jumpToRightGate,
                 gateMid, delay(EXTRA_GATE_DELAY_FIRST_FLOOR), ...initialFloorRooms, ...battleActions, delay(EXTRA_WALK_DELAY_FIRST_FLOOR),
                 gateRight, delay(EXTRA_GATE_DELAY_FIRST_FLOOR), ...initialFloorRooms, ...battleActions, delay(EXTRA_WALK_DELAY_FIRST_FLOOR),
-                floor2Done, waitForFloorConfirm, floorConfirm, delay(500),
+                floor2Done, waitForFloorConfirm, floorConfirm,
             ], MACRO_DUNGEON)
 
             for (let i = 0; i < floors; i++) {
                 if (isRunningMacro != MACRO_DUNGEON) break
                 await runActions([
-                    title("lvl1"), ...fast1stGateActions, waitForGateRight, gateRight, waitFor1RoomSelection, roomMid, ...battleActions,
+                    title("lvl1"), ...fastRightGateActions, waitForGateRight, gateRight, waitFor1RoomSelection, roomMid, ...battleActions,
                     title("lvl2"), ...fastRightGateActions, waitForGateMid, gateMid, waitFor2RoomSelection, checkRoomColors, roomLeft, roomRight, ...battleActions,
                     title("lvl3"), ...fastRightGateActions, waitForGateMid, gateMid, waitFor2RoomSelection, checkRoomColors, roomLeft, roomRight, ...battleActions,
                     title("lvl4"), ...fastRightGateActions, waitForGateMid, gateMid, waitFor1RoomSelection, roomMid, ...battleActions,
                     title("lvl5"), ...fastRightGateActions, waitForGateLeft, gateLeft, waitFor2RoomSelection, checkRoomColors, roomLeft, roomRight, ...battleActions,
-                    title("floor1"), waitForFloor1Done, floor1Done, waitForFloorConfirm, floorConfirm, delay(500),
-                    title("lvl6"), ...fast6thGateActions, waitForGateLeft, gateLeft, waitFor1RoomSelection, roomMid, ...battleActions,
+                    title("floor1"), waitForFloor1Done, floor1Done, waitForFloorConfirm, floorConfirm,
+                    title("lvl6"), ...fastLeftGateActions, waitForGateLeft, gateLeft, waitFor1RoomSelection, roomMid, ...battleActions,
                     title("lvl7"), ...fastLeftGateActions, waitForGateMid, gateMid, waitFor2RoomSelection, checkRoomColors, roomLeft, roomRight, ...battleActions,
                     title("lvl8"), ...fastLeftGateActions, waitForGateMid, gateMid, waitFor2RoomSelection, checkRoomColors, roomLeft, roomRight, ...battleActions,
                     title("lvl9"), ...fastLeftGateActions, waitForGateMid, gateMid, waitFor1RoomSelection, roomMid, ...battleActions,
                     title("lvl0"), ...fastLeftGateActions, waitForGateRight, gateRight, waitFor2RoomSelection, checkRoomColors, roomLeft, roomRight, ...battleActions,
-                    title("floor2"), waitForFloor2Done, floor2Done, waitForFloorConfirm, floorConfirm, delay(500),
+                    title("floor2"), waitForFloor2Done, floor2Done, waitForFloorConfirm, floorConfirm,
                 ], MACRO_DUNGEON)
             }
 
-            setActivated(dungeonMacroButton, false, BUTTON_TEXT_STOP_DUNGEON, BUTTON_TEXT_RUN_DUNGEON)
+            setActivated(dailyButton, false, BUTTON_TEXT_STOP_CUSTOM, BUTTON_TEXT_RUN_CUSTOM)
             if (isRunningMacro == MACRO_DUNGEON) {
                 isRunningMacro = null
                 await releaseWakeLock()
             }
         }
 
-        async function runFrontier(groups = [], attempts = 3, teams = 10) {
+        async function runFrontier(groups = [], attempts = 3, teams = 10, isResume = false) {
             if (isRunningMacro == MACRO_FRONTIER) {
                 setActivated(dailyButton, false, BUTTON_TEXT_STOP_CUSTOM, BUTTON_TEXT_RUN_CUSTOM)
                 await releaseWakeLock()
@@ -2027,8 +2467,9 @@
                 return
             }
             localStorage.setItem("last_macro", MACRO_FRONTIER)
-            setActivated(dailyButton, true, BUTTON_TEXT_STOP_CUSTOM, BUTTON_TEXT_RUN_CUSTOM)
+            setActivated(dailyButton, true, BUTTON_TEXT_STOP_MACRO + MACRO_FRONTIER, BUTTON_TEXT_RUN_CUSTOM)
             isRunningMacro = MACRO_FRONTIER
+            startMacroSession(isResume)
             await enableWakeLock()
 
             gameCanvas.focus()
@@ -2146,7 +2587,7 @@
 
         async function toggleDebug() {
             DEBUG_CLICKS = !DEBUG_CLICKS
-            setActivated(customMacroButton, DEBUG_CLICKS, BUTTON_TEXT_STOP_DEBUG, BUTTON_TEXT_RUN_DEBUG)
+            setActivated(debugButton, DEBUG_CLICKS, BUTTON_TEXT_STOP_DEBUG, BUTTON_TEXT_RUN_DEBUG)
             if (DEBUG_CLICKS) {
                 gameCanvas.addEventListener('click', logMouse)
             } else {
@@ -2336,7 +2777,8 @@
 
         async function runDailyTasks(params) {
             isRunningMacro = MACRO_DAILY
-            setActivated(dailyButton, true, BUTTON_TEXT_STOP_CUSTOM, BUTTON_TEXT_RUN_CUSTOM)
+            startMacroSession(false)
+            setActivated(dailyButton, true, BUTTON_TEXT_STOP_MACRO + MACRO_DAILY, BUTTON_TEXT_RUN_CUSTOM)
 
             if (isRunningMacro && params.heroic_chest) {
                 await runHeroicChest(MACRO_DAILY)
@@ -2376,12 +2818,15 @@
 
         addNiceToolbar()
 
-        fromHomePage = true
+        await startTelegramControl()
+
         if (localStorage.getItem("last_macro") == MACRO_FRONTIER) {
             const groups = parseFrontierGroups(localStorage.getItem(FRONTIER_GROUPS_STORAGE_KEY)) || []
-            await runFrontier(groups, restoreInt(FRONTIER_ATTEMPTS_STORAGE_KEY, 3), restoreInt(FRONTIER_TEAMS_STORAGE_KEY, 10))
-        } else {
-            await runDungeonMacro()
+            fromHomePage = true
+            await runFrontier(groups, Number(localStorage.getItem(FRONTIER_ATTEMPTS_STORAGE_KEY) || 3), Number(localStorage.getItem(FRONTIER_TEAMS_STORAGE_KEY) || 10), true)
+        } else if (localStorage.getItem("last_macro") == MACRO_DUNGEON) {
+            fromHomePage = true
+            await runDungeonMacro(true)
         }
     }
 })();
