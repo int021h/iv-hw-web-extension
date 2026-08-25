@@ -258,7 +258,7 @@
         } catch (e) {
           warn('XHR capture failed:', e);
         }
-      });
+      }, { once: true });
     }
     return origSend.apply(this, arguments);
   };
