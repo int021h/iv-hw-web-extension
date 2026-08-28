@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dungeon runner
 // @namespace    http://tampermonkey.net/
-// @version      2026-08-24_19:02
+// @version      2026-08-29_00:34
 // @description  try to take over the world!
 // @author       You
 // @match        https://www.hero-wars-alliance.com/*
@@ -15,7 +15,13 @@
     /// ======== OPTIONS ==========
     const WARDEN = false
 
-    const PERSIST_LOGS = true
+    function loadBoolSetting(key, defaultValue) {
+        const saved = localStorage.getItem(key)
+        return saved === null ? defaultValue : saved === 'true'
+    }
+
+    let PRESERVE_LOG = loadBoolSetting('PRESERVE_LOG', true)
+    let LOG_ACTIONS = loadBoolSetting('LOG_ACTIONS', true)
     const PERSISTED_LOGS_KEY = 'persistedLogs'
 
     const MACRO_SESSION_START_KEY = 'macroSessionStart'
@@ -63,9 +69,6 @@
     const BUTTON_TEXT_RUN_CUSTOM = 'Run Macro'
     const BUTTON_TEXT_STOP_CUSTOM = 'Stop Macro'
     const BUTTON_TEXT_STOP_MACRO = 'Stop '
-
-    const BUTTON_TEXT_RUN_DEBUG = '👀 Debug'
-    const BUTTON_TEXT_STOP_DEBUG = '🚫 Stop debug'
 
     const BUTTON_TEXT_RUN_REPEAT_CLICK = 'Start recording'
     const BUTTON_TEXT_ARMED_REPEAT_CLICK = 'Recording...'
@@ -157,12 +160,12 @@
 
 
     // ======== REMOTE CONTROL via own Telegram bot ==========
-    const TELEGRAM_REMOTE_CONTROL = false
-    const TELEGRAM_CONTROL_URL = 'http://127.0.0.1:8765'
-    const TELEGRAM_POLL_INTERVAL = 1000
+    let TELEGRAM_REMOTE_CONTROL = loadBoolSetting('TELEGRAM_REMOTE_CONTROL', false)
+    let TELEGRAM_CONTROL_URL = localStorage.getItem('TELEGRAM_CONTROL_URL') || 'http://127.0.0.1:8765'
+    let TELEGRAM_POLL_INTERVAL = Number(localStorage.getItem('TELEGRAM_POLL_INTERVAL') || 1000)
+    let TELEGRAM_NOTIFY_EVERY_N_FLOORS = Number(localStorage.getItem('TELEGRAM_NOTIFY_EVERY_N_FLOORS') || 10) // отправлять сообщение в Telegram каждые N пройденных этажей
     const TELEGRAM_LAST_COMMAND_KEY = 'telegram_dungeon_last_command'
-    const TELEGRAM_NOTIFY_EVERY_N_FLOORS = 10 // отправлять сообщение в Telegram каждые N пройденных этажей
-
+    
     // Отправляет произвольное сообщение в Telegram через локальный сервер.
     // ОЖИДАЕТСЯ, что локальный сервер (TELEGRAM_CONTROL_URL) умеет принимать
     // POST /notify с телом {message: "..."} и пересылать его в Telegram.
@@ -242,6 +245,21 @@
         }
     });
 
+    // shows a placeholder hint in the toolbar's latest-log line when there's nothing logged yet
+    function setLatestLogText(el, text) {
+        if (text) {
+            el.textContent = text
+            el.title = text
+            el.style.fontStyle = 'normal'
+            el.style.color = '#bcd6f5'
+        } else {
+            el.textContent = 'Start by clicking "Run Macro"'
+            el.title = ''
+            el.style.fontStyle = 'italic'
+            el.style.color = 'rgba(188, 214, 245, 0.8)'
+        }
+    }
+
     // keeps the last 10 errors as separate spans inside #errorContainer
     function addError(msg) {
         const container = document.getElementById('errorContainer')
@@ -250,18 +268,25 @@
         const now = new Date();
         const time = now.toTimeString().slice(0, 8);
 
+        const shortMsg = msg.slice(0, 200);
+        const text = "[" + time + "] " + shortMsg;
         const span = document.createElement('div')
-        span.textContent = "[" + time + "] " + msg.slice(0, 200);
+        span.textContent = text
 
-        container.appendChild(span)
+        container.prepend(span)
 
         while (container.children.length > 20) {
-            container.removeChild(container.firstChild)
+            container.removeChild(container.lastChild)
         }
 
-        container.scrollTop = container.scrollHeight
+        container.scrollTop = 0
 
-        if (PERSIST_LOGS) {
+        const latestLogEl = document.getElementById('latestLogEl')
+        if (latestLogEl) {
+            setLatestLogText(latestLogEl, shortMsg)
+        }
+
+        if (PRESERVE_LOG) {
             const logs = Array.from(container.children).map(el => el.textContent)
             localStorage.setItem(PERSISTED_LOGS_KEY, JSON.stringify(logs))
         }
@@ -613,6 +638,12 @@
             }
         }
 
+        const MIN_RUNTIME_FOR_RESULTS_POPUP_MS = 60000
+        function ranLongEnoughForResultsPopup() {
+            const startTime = parseInt(localStorage.getItem(MACRO_SESSION_START_KEY), 10)
+            return Number.isFinite(startTime) && (Date.now() - startTime) >= MIN_RUNTIME_FOR_RESULTS_POPUP_MS
+        }
+
         function getMacroSessionSummary() {
             const startTime = parseInt(localStorage.getItem(MACRO_SESSION_START_KEY), 10)
             const reloads = parseInt(localStorage.getItem(MACRO_RELOAD_COUNT_KEY), 10) || 0
@@ -876,32 +907,48 @@
             // ============================================================
             function buildToolbar() {
                 const container = document.createElement('span')
-                container.style.display = 'inline-flex'
+                container.style.display = 'flex'
                 container.style.alignItems = 'center'
+                container.style.justifyContent = 'center'
                 container.style.gap = '20px'
                 container.style.padding = '10px 50px'
                 //container.style.border = '1px solid rgba(120,180,255,0.35)'
                 //container.style.borderRadius = '10px'
                 //container.style.background = 'linear-gradient(180deg, rgba(20,30,55,0.92) 0%, rgba(8,12,25,0.92) 100%)'
-                container.style.background = 'linear-gradient(90deg, transparent 0%, rgba(20, 30, 55, 0.92) 10%, rgba(20, 30, 55, 0.92) 90%, transparent 100%)'
+                container.style.background = 'linear-gradient(90deg, transparent 0%, rgba(20, 30, 55, 0.92) 5%, rgba(20, 30, 55, 0.92) 95%, transparent 100%)'
                 //container.style.boxShadow = '0 0 12px rgba(0,140,255,0.18)'
                 container.style.color = '#d9ecff'
                 container.style.fontSize = '16px'
                 container.style.fontFamily = 'Trebuchet MS, Verdana, sans-serif'
                 container.style.backdropFilter = 'blur(2px)'
-
-                const debugButton = document.createElement('button')
-                debugButton.id = 'debugButton'
-                debugButton.textContent = BUTTON_TEXT_RUN_DEBUG
-                Object.assign(debugButton.style, greenButtonStyle)
-
-                debugButton.onmouseenter = () => {
-                    debugButton.style.filter = 'brightness(1.12)'
+                container.style.flex = '1 1 auto'
+                container.style.minWidth = '0'
+                container.style.overflow = 'hidden'
+                
+                // ---------- latest log line ----------
+                const latestLogEl = document.createElement('div')
+                latestLogEl.id = 'latestLogEl'
+                Object.assign(latestLogEl.style, {
+                    flex: '1 1 auto',
+                    minWidth: '0',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    fontSize: '12px',
+                    color: '#bcd6f5',
+                    cursor: 'pointer',
+                    padding: '4px 8px'
+                })
+                let latestMsg = null
+                if (PRESERVE_LOG) {
+                    try {
+                        const savedLogs = JSON.parse(localStorage.getItem(PERSISTED_LOGS_KEY))
+                        if (Array.isArray(savedLogs) && savedLogs.length > 0) {
+                            latestMsg = savedLogs[0].replace(/^\[\d{2}:\d{2}:\d{2}\] /, '')
+                        }
+                    } catch {}
                 }
-                debugButton.onmouseleave = () => {
-                    debugButton.style.filter = 'brightness(1)'
-                }
-                debugButton.addEventListener('click', toggleDebug)
+                setLatestLogText(latestLogEl, latestMsg)
 
                 // =========== DAILY ===========
 
@@ -909,7 +956,9 @@
                 dailyButton.id = 'dailyButton'
                 dailyButton.textContent = BUTTON_TEXT_RUN_CUSTOM
 
-                Object.assign(dailyButton.style, greenButtonStyle)
+                Object.assign(dailyButton.style, greenButtonStyle, {
+                    minWidth: '160px'
+                })
 
                 dailyButton.onmouseenter = () => {
                     dailyButton.style.filter = 'brightness(1.12)'
@@ -923,7 +972,7 @@
 
                 //startMacroSession(true)
 
-                return { container, dailyButton, debugButton }
+                return { container, dailyButton, latestLogEl }
             }
 
             // ============================================================
@@ -938,7 +987,7 @@
                     position: 'fixed',
                     display: 'none',
                     zIndex: '9999999',
-                    minWidth: '470px',
+                    minWidth: '600px',
                     padding: '0',
                     overflow: 'hidden',
                     border: '1px solid rgb(212,161,110)',
@@ -1064,65 +1113,22 @@
 
                 // =========== DUNGEON ===========
                 function buildDungeonPanel() {
-                    const selectFactor = document.createElement('select')
-                    selectFactor.id = 'delayFactor'
-                    selectStyle(selectFactor)
-
-                    const factor1 = document.createElement('option')
-                    factor1.value = '1.0'
-                    factor1.selected = delayFactor == 1.0
-                    factor1.textContent = '1x'
-
-                    const factor11 = document.createElement('option')
-                    factor11.value = '1.1'
-                    factor11.selected = delayFactor == 1.1
-                    factor11.textContent = '1.1x'
-
-                    const factor12 = document.createElement('option')
-                    factor12.value = '1.2'
-                    factor12.selected = delayFactor == 1.2
-                    factor12.textContent = '1.2x'
-
-                    const factor15 = document.createElement('option')
-                    factor15.value = '1.5'
-                    factor15.selected = delayFactor == 1.5
-                    factor15.textContent = '1.5x'
-
-                    const factor20 = document.createElement('option')
-                    factor20.value = '2.0'
-                    factor20.selected = delayFactor == 2.0
-                    factor20.textContent = '2x'
-
-                    const factor30 = document.createElement('option')
-                    factor30.value = '3.0'
-                    factor30.selected = delayFactor == 3.0
-                    factor30.textContent = '3x'
-
-                    selectFactor.append(
-                        factor1,
-                        factor11,
-                        factor12,
-                        factor15,
-                        factor20,
-                        factor30
-                    )
-
                     const select = document.createElement('select')
                     select.id = 'stopHPLimit'
                     selectStyle(select)
 
                     const option1 = document.createElement('option')
                     option1.value = '0'
-                    option1.textContent = 'If titan dies'
+                    option1.textContent = 'Titan dies'
                     option1.selected = hpLimit == 0
                     const option2 = document.createElement('option')
                     option2.value = '30'
                     option2.selected = hpLimit == 30
-                    option2.textContent = 'If HP < 30%'
+                    option2.textContent = 'HP < 30%'
                     const option3 = document.createElement('option')
                     option3.value = '50'
                     option3.selected = hpLimit == 50
-                    option3.textContent = 'If HP < 50%'
+                    option3.textContent = 'HP < 50%'
                     const option4 = document.createElement('option')
                     option4.value = '100'
                     option4.selected = hpLimit == 100
@@ -1151,7 +1157,9 @@
                     Object.assign(elements.style, {
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '8px',
+                        justifyContent: 'center',
+                        flexWrap: 'wrap',
+                        gap: '12px',
                         userSelect: 'none',
                         zIndex: '999999'
                     })
@@ -1165,20 +1173,21 @@
                             el.dataset.index = index
                             el.dataset.id = item.id
                             el.textContent = item.label
+                            el.title = item.id
                             Object.assign(el.style, {
-                                width: '26px',
-                                height: '26px',
+                                width: '52px',
+                                height: '52px',
                                 borderRadius: '50%',
                                 cursor: 'grab',
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
                                 fontFamily: 'sans-serif',
-                                fontSize: '12px',
+                                fontSize: '24px',
                                 fontWeight: 'normal',
                                 background: item.background,
                                 color: item.textColor || 'white',
-                                border: `2px solid ${item.bColor}`,
+                                border: `4px solid ${item.bColor}`,
                                 boxSizing: 'border-box',
                                 transition: 'transform 120ms ease, opacity 120ms ease, box-shadow 120ms ease'
                             })
@@ -1277,6 +1286,7 @@
                         Object.assign(row.style, {
                             display: 'flex',
                             alignItems: 'center',
+                            justifyContent: 'space-between',
                             gap: '8px',
                             marginBottom: '8px'
                         })
@@ -1291,9 +1301,26 @@
                         return row
                     }
 
-                    dungeonPanel.appendChild(makeDungeonSettingRow('Room priority:', elements))
-                    dungeonPanel.appendChild(makeDungeonSettingRow('Delays multiplier:', selectFactor))
-                    dungeonPanel.appendChild(makeDungeonSettingRow('Stop:', select))
+                    const roomPriorityBlock = document.createElement('div')
+                    Object.assign(roomPriorityBlock.style, {
+                        marginBottom: '8px'
+                    })
+                    const roomPriorityLabel = document.createElement('div')
+                    roomPriorityLabel.textContent = 'Room priority:'
+                    Object.assign(roomPriorityLabel.style, {
+                        color: '#bcd6f5',
+                        fontSize: '12px',
+                        marginBottom: '8px',
+                        textAlign: 'center'
+                    })
+                    roomPriorityBlock.appendChild(roomPriorityLabel)
+                    roomPriorityBlock.appendChild(elements)
+                    dungeonPanel.appendChild(roomPriorityBlock)
+
+                    const stopRow = makeDungeonSettingRow('Stop macro if:', select)
+                    stopRow.style.marginTop = '16px'
+                    stopRow.style.marginBottom = '16px'
+                    dungeonPanel.appendChild(stopRow)
 
                     Object.assign(dungeonButton.style, {
                         width: 'fit-content',
@@ -1775,6 +1802,69 @@
                     })
                     delaysPanel.appendChild(delaysTitle)
 
+                    // ---------- delays multiplier ----------
+                    const selectFactor = document.createElement('select')
+                    selectFactor.id = 'delayFactor'
+                    selectStyle(selectFactor)
+
+                    const factor1 = document.createElement('option')
+                    factor1.value = '1.0'
+                    factor1.selected = delayFactor == 1.0
+                    factor1.textContent = '1x'
+
+                    const factor11 = document.createElement('option')
+                    factor11.value = '1.1'
+                    factor11.selected = delayFactor == 1.1
+                    factor11.textContent = '1.1x'
+
+                    const factor12 = document.createElement('option')
+                    factor12.value = '1.2'
+                    factor12.selected = delayFactor == 1.2
+                    factor12.textContent = '1.2x'
+
+                    const factor15 = document.createElement('option')
+                    factor15.value = '1.5'
+                    factor15.selected = delayFactor == 1.5
+                    factor15.textContent = '1.5x'
+
+                    const factor20 = document.createElement('option')
+                    factor20.value = '2.0'
+                    factor20.selected = delayFactor == 2.0
+                    factor20.textContent = '2x'
+
+                    const factor30 = document.createElement('option')
+                    factor30.value = '3.0'
+                    factor30.selected = delayFactor == 3.0
+                    factor30.textContent = '3x'
+
+                    selectFactor.append(
+                        factor1,
+                        factor11,
+                        factor12,
+                        factor15,
+                        factor20,
+                        factor30
+                    )
+
+                    const delayFactorRow = document.createElement('div')
+                    Object.assign(delayFactorRow.style, {
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '8px',
+                        marginBottom: '6px'
+                    })
+                    const delayFactorLabel = document.createElement('span')
+                    delayFactorLabel.textContent = 'Delays multiplier'
+                    Object.assign(delayFactorLabel.style, {
+                        flex: '1',
+                        color: '#bcd6f5',
+                        fontSize: '11px'
+                    })
+                    delayFactorRow.appendChild(delayFactorLabel)
+                    delayFactorRow.appendChild(selectFactor)
+                    delaysPanel.appendChild(delayFactorRow)
+
                     const DELAY_SETTINGS = [
                         { key: 'GAME_LOAD_TIMEOUT', label: 'Game initialization min time', defaultValue: 10000, getValue: () => GAME_LOAD_TIMEOUT, setValue: v => { GAME_LOAD_TIMEOUT = v } },
                         { key: 'DELAY_CHECK_CYCLE', label: 'Max wait time until any required screen appears', defaultValue: 5000, getValue: () => DELAY_CHECK_CYCLE, setValue: v => { DELAY_CHECK_CYCLE = v } },
@@ -1878,11 +1968,191 @@
                     delaysPanel.appendChild(delaysButtonsRow)
                 }
 
+                // =========== SETTINGS ===========
+                function buildSettingsPanel() {
+                    const settingsPanel = makeDailyPopupPanel('Settings', '⚙️')
+                    const settingsTitle = document.createElement('div')
+                    settingsTitle.textContent = 'Settings'
+                    Object.assign(settingsTitle.style, {
+                        fontWeight: 'bold',
+                        marginBottom: '8px',
+                        color: '#eef7ff',
+                        textAlign: 'center'
+                    })
+                    settingsPanel.appendChild(settingsTitle)
+
+                    function makeSettingCheckbox(labelText, storageKey, getValue, setValue) {
+                        const label = document.createElement('label')
+                        Object.assign(label.style, {
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            padding: '4px 2px',
+                            cursor: 'pointer',
+                            userSelect: 'none'
+                        })
+                        const checkbox = document.createElement('input')
+                        checkbox.type = 'checkbox'
+                        checkbox.checked = getValue()
+                        checkbox.addEventListener('change', () => {
+                            setValue(checkbox.checked)
+                            localStorage.setItem(storageKey, String(checkbox.checked))
+                        })
+                        label.appendChild(checkbox)
+                        label.appendChild(document.createTextNode(labelText))
+                        settingsPanel.appendChild(label)
+                    }
+
+                    makeSettingCheckbox('Log all actions', 'LOG_ACTIONS', () => LOG_ACTIONS, v => { LOG_ACTIONS = v })
+                    makeSettingCheckbox('Preserve log on reload', 'PRESERVE_LOG', () => PRESERVE_LOG, v => { PRESERVE_LOG = v })
+
+                    // not persisted to localStorage - always starts disabled
+                    const debugLabel = document.createElement('label')
+                    Object.assign(debugLabel.style, {
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        padding: '4px 2px',
+                        cursor: 'pointer',
+                        userSelect: 'none'
+                    })
+                    const debugCheckbox = document.createElement('input')
+                    debugCheckbox.type = 'checkbox'
+                    debugCheckbox.checked = DEBUG_CLICKS
+                    debugCheckbox.addEventListener('change', () => {
+                        DEBUG_CLICKS = debugCheckbox.checked
+                        if (DEBUG_CLICKS) {
+                            gameCanvas.addEventListener('click', logMouse)
+                        } else {
+                            gameCanvas.removeEventListener('click', logMouse)
+                        }
+                    })
+                    debugLabel.appendChild(debugCheckbox)
+                    debugLabel.appendChild(document.createTextNode('Log all clicks and colors'))
+                    settingsPanel.appendChild(debugLabel)
+
+                    // =========== REMOTE CONTROL ===========
+                    const remoteControlTitle = document.createElement('div')
+                    remoteControlTitle.textContent = 'Remote control'
+                    Object.assign(remoteControlTitle.style, {
+                        fontWeight: 'bold',
+                        marginTop: '16px',
+                        marginBottom: '8px',
+                        color: '#eef7ff',
+                        textAlign: 'center'
+                    })
+                    settingsPanel.appendChild(remoteControlTitle)
+
+                    const remoteControlLabel = document.createElement('label')
+                    Object.assign(remoteControlLabel.style, {
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        padding: '4px 2px',
+                        cursor: 'pointer',
+                        userSelect: 'none',
+                        marginBottom: '8px'
+                    })
+                    const remoteControlCheckbox = document.createElement('input')
+                    remoteControlCheckbox.type = 'checkbox'
+                    remoteControlCheckbox.checked = TELEGRAM_REMOTE_CONTROL
+                    remoteControlLabel.appendChild(remoteControlCheckbox)
+                    remoteControlLabel.appendChild(document.createTextNode('Enable telegram remote control and logs'))
+                    settingsPanel.appendChild(remoteControlLabel)
+
+                    function makeRemoteControlField(labelText, defaultValue, type) {
+                        const wrapper = document.createElement('label')
+                        Object.assign(wrapper.style, {
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: '8px',
+                            marginBottom: '8px'
+                        })
+                        const label = document.createElement('span')
+                        label.textContent = labelText
+                        Object.assign(label.style, {
+                            color: '#bcd6f5',
+                            fontSize: '12px'
+                        })
+                        const input = document.createElement('input')
+                        input.type = type
+                        input.value = defaultValue
+                        Object.assign(input.style, inputStyle)
+                        input.style.textAlign = 'center'
+                        input.style.width = '160px'
+                        wrapper.appendChild(label)
+                        wrapper.appendChild(input)
+                        settingsPanel.appendChild(wrapper)
+                        return input
+                    }
+
+                    const telegramUrlInput = makeRemoteControlField('Control URL:', TELEGRAM_CONTROL_URL, 'text')
+                    const telegramPollIntervalInput = makeRemoteControlField('Poll interval (ms):', TELEGRAM_POLL_INTERVAL, 'number')
+                    const telegramNotifyFloorsInput = makeRemoteControlField('Notify every N floors:', TELEGRAM_NOTIFY_EVERY_N_FLOORS, 'number')
+
+                    function setRemoteControlFieldsDisabled(disabled) {
+                        [telegramUrlInput, telegramPollIntervalInput, telegramNotifyFloorsInput].forEach(input => {
+                            input.disabled = disabled
+                            input.style.opacity = disabled ? '0.5' : '1'
+                        })
+                    }
+                    setRemoteControlFieldsDisabled(!remoteControlCheckbox.checked)
+                    remoteControlCheckbox.addEventListener('change', () => {
+                        setRemoteControlFieldsDisabled(!remoteControlCheckbox.checked)
+                    })
+
+                    const remoteControlSaveButton = document.createElement('button')
+                    remoteControlSaveButton.textContent = 'Save'
+                    Object.assign(remoteControlSaveButton.style, greenButtonStyle, {
+                        width: 'fit-content',
+                        display: 'block',
+                        marginTop: '4px',
+                        marginLeft: 'auto',
+                        marginRight: 'auto'
+                    })
+                    remoteControlSaveButton.onmouseenter = () => {
+                        remoteControlSaveButton.style.filter = 'brightness(1.12)'
+                    }
+                    remoteControlSaveButton.onmouseleave = () => {
+                        remoteControlSaveButton.style.filter = 'brightness(1)'
+                    }
+                    remoteControlSaveButton.addEventListener('click', (e) => {
+                        e.stopPropagation()
+                        TELEGRAM_REMOTE_CONTROL = remoteControlCheckbox.checked
+                        TELEGRAM_CONTROL_URL = telegramUrlInput.value.trim() || TELEGRAM_CONTROL_URL
+                        TELEGRAM_POLL_INTERVAL = parseInt(telegramPollIntervalInput.value, 10) || TELEGRAM_POLL_INTERVAL
+                        TELEGRAM_NOTIFY_EVERY_N_FLOORS = parseInt(telegramNotifyFloorsInput.value, 10) || TELEGRAM_NOTIFY_EVERY_N_FLOORS
+
+                        localStorage.setItem('TELEGRAM_REMOTE_CONTROL', String(TELEGRAM_REMOTE_CONTROL))
+                        localStorage.setItem('TELEGRAM_CONTROL_URL', TELEGRAM_CONTROL_URL)
+                        localStorage.setItem('TELEGRAM_POLL_INTERVAL', String(TELEGRAM_POLL_INTERVAL))
+                        localStorage.setItem('TELEGRAM_NOTIFY_EVERY_N_FLOORS', String(TELEGRAM_NOTIFY_EVERY_N_FLOORS))
+
+                        telegramUrlInput.value = TELEGRAM_CONTROL_URL
+                        telegramPollIntervalInput.value = TELEGRAM_POLL_INTERVAL
+                        telegramNotifyFloorsInput.value = TELEGRAM_NOTIFY_EVERY_N_FLOORS
+                    })
+                    settingsPanel.appendChild(remoteControlSaveButton)
+
+                    const remoteControlHint = document.createElement('div')
+                    remoteControlHint.textContent = 'Reload the page to apply Telegram settings'
+                    Object.assign(remoteControlHint.style, {
+                        marginTop: '6px',
+                        color: '#8fa8c4',
+                        fontSize: '11px',
+                        textAlign: 'center',
+                        fontStyle: 'italic'
+                    })
+                    settingsPanel.appendChild(remoteControlHint)
+                }
+
                 buildDungeonPanel()
+                buildFrontierPanel()
                 buildDailyTasksPanel()
                 const { repeatClickButton, stopRecordingClicks } = buildRepeatClickPanel()
-                buildFrontierPanel()
                 buildDelaysPanel()
+                buildSettingsPanel()
 
                 activateDailyPopupSection(dailyPopupSections[0])
 
@@ -1894,18 +2164,28 @@
             // ============================================================
             // LOGS POPUP
             // ============================================================
-            function buildLogsPopup() {
+            function buildLogsPopup(latestLogEl) {
                 // ---------- logs button + popup ----------
                 const logsButton = document.createElement('button')
                 logsButton.id = 'logsButton'
-                logsButton.textContent = '📋 Logs'
+                logsButton.textContent = '🔽'
+                logsButton.title = 'Logs'
 
-                Object.assign(logsButton.style, blueButtonStyle)
+                Object.assign(logsButton.style, {
+                    background: 'transparent',
+                    border: 'none',
+                    padding: '0',
+                    fontSize: '18px',
+                    lineHeight: '1',
+                    cursor: 'pointer',
+                    opacity: '0.75',
+                    transition: '0.15s ease'
+                })
                 logsButton.onmouseenter = () => {
-                    logsButton.style.filter = 'brightness(1.12)'
+                    logsButton.style.opacity = '1'
                 }
                 logsButton.onmouseleave = () => {
-                    logsButton.style.filter = 'brightness(1)'
+                    logsButton.style.opacity = '0.75'
                 }
 
                 const logsPopup = document.createElement('div')
@@ -1914,8 +2194,7 @@
                     position: 'fixed',
                     display: 'none',
                     zIndex: '9999999',
-                    minWidth: '400px',
-                    maxWidth: '600px',
+                    boxSizing: 'border-box',
                     padding: '12px',
                     border: '1px solid rgba(120,180,255,0.5)',
                     borderRadius: '10px',
@@ -1937,24 +2216,32 @@
                 })
                 logsPopup.appendChild(logsTitle)
 
-                const copyErrorsButton = document.createElement('button')
-                copyErrorsButton.textContent = 'Copy 📋'
-                Object.assign(copyErrorsButton.style, {
-                    width: 'fit-content',
-                    display: 'block',
-                    background: 'linear-gradient(180deg, #8bd0ff 0%, #2f7fc4 55%, #1a4f80 100%)',
-                    color: '#eef7ff',
-                    border: '1px solid #7ec8f2',
+                const orangeButtonStyle = {
+                    background: 'linear-gradient(180deg, #ffb15c 0%, #d3821e 50%, #8a4f0d 100%)',
+                    color: '#fffdf5',
+                    border: '1px solid #d5a45d',
                     borderRadius: '8px',
                     padding: '4px 12px',
                     fontWeight: 'bold',
                     cursor: 'pointer',
                     textShadow: '0 1px 2px rgba(0,0,0,0.7)',
-                    boxShadow: '0 0 10px rgba(80,180,255,0.3), inset 0 1px 0 rgba(255,255,255,0.25)',
-                    transition: '0.15s ease',
-                    marginBottom: '8px',
-                    marginLeft: 'auto',
-                    marginRight: 'auto'
+                    boxShadow: 'inset 0 2px 3px rgba(255,255,255,0.35), inset 0 -4px 6px rgba(70,35,0,0.35)',
+                    transition: '0.15s ease'
+                }
+
+                const logsButtonsRow = document.createElement('div')
+                Object.assign(logsButtonsRow.style, {
+                    display: 'flex',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    marginBottom: '8px'
+                })
+                logsPopup.appendChild(logsButtonsRow)
+
+                const copyErrorsButton = document.createElement('button')
+                copyErrorsButton.textContent = 'Copy 📋'
+                Object.assign(copyErrorsButton.style, greenButtonStyle, {
+                    width: 'fit-content'
                 })
                 copyErrorsButton.onmouseenter = () => {
                     copyErrorsButton.style.filter = 'brightness(1.12)'
@@ -1967,7 +2254,27 @@
                     const text = Array.from(errorContainerEl.querySelectorAll('div')).map(s => s.textContent).join('\n')
                     navigator.clipboard.writeText(text)
                 })
-                logsPopup.appendChild(copyErrorsButton)
+                logsButtonsRow.appendChild(copyErrorsButton)
+
+                const clearErrorsButton = document.createElement('button')
+                clearErrorsButton.textContent = 'Clear 🗑️'
+                Object.assign(clearErrorsButton.style, orangeButtonStyle, {
+                    width: 'fit-content'
+                })
+                clearErrorsButton.onmouseenter = () => {
+                    clearErrorsButton.style.filter = 'brightness(1.12)'
+                }
+                clearErrorsButton.onmouseleave = () => {
+                    clearErrorsButton.style.filter = 'brightness(1)'
+                }
+                clearErrorsButton.addEventListener('click', (e) => {
+                    e.stopPropagation()
+                    errorContainerEl.innerHTML = ''
+                    if (PRESERVE_LOG) {
+                        localStorage.removeItem(PERSISTED_LOGS_KEY)
+                    }
+                })
+                logsButtonsRow.appendChild(clearErrorsButton)
 
                 const errorContainerEl = document.createElement('div')
                 errorContainerEl.id = 'errorContainer'
@@ -1985,7 +2292,7 @@
                 })
                 logsPopup.appendChild(errorContainerEl)
 
-                if (PERSIST_LOGS) {
+                if (PRESERVE_LOG) {
                     try {
                         const savedLogs = JSON.parse(localStorage.getItem(PERSISTED_LOGS_KEY))
                         if (Array.isArray(savedLogs)) {
@@ -1994,12 +2301,24 @@
                                 span.textContent = text
                                 errorContainerEl.appendChild(span)
                             })
-                            errorContainerEl.scrollTop = errorContainerEl.scrollHeight
+                            errorContainerEl.scrollTop = 0
                         }
                     } catch {}
                 }
 
                 document.body.appendChild(logsPopup)
+
+                function toggleLogsPopup() {
+                    if (logsPopup.style.display === 'none') {
+                        const rect = logLineBox.getBoundingClientRect()
+                        logsPopup.style.left = `${rect.left}px`
+                        logsPopup.style.top = `${rect.bottom + 6}px`
+                        logsPopup.style.width = `${rect.width}px`
+                        logsPopup.style.display = 'block'
+                    } else {
+                        logsPopup.style.display = 'none'
+                    }
+                }
 
                 logsButton.addEventListener('click', (e) => {
                     e.stopPropagation()
@@ -2007,17 +2326,14 @@
                     const text = Array.from(errorContainerEl.querySelectorAll('div')).map(s => s.textContent).join('\n')
                     navigator.clipboard.writeText(text)
 
-                    if (logsPopup.style.display === 'none') {
-                        const rect = logsButton.getBoundingClientRect()
-                        logsPopup.style.left = `${rect.right - 400}px`
-                        logsPopup.style.top = `${rect.bottom + 6}px`
-                        logsPopup.style.display = 'block'
-                    } else {
-                        logsPopup.style.display = 'none'
-                    }
+                    toggleLogsPopup()
+                })
+                latestLogEl.addEventListener('click', (e) => {
+                    e.stopPropagation()
+                    toggleLogsPopup()
                 })
                 document.addEventListener('click', (e) => {
-                    if (!logsPopup.contains(e.target) && e.target !== logsButton) {
+                    if (!logsPopup.contains(e.target) && e.target !== logsButton && e.target !== latestLogEl) {
                         logsPopup.style.display = 'none'
                     }
                 })
@@ -2028,7 +2344,7 @@
             // ============================================================
             // ASSEMBLY
             // ============================================================
-            const { container, dailyButton, debugButton } = buildToolbar()
+            const { container, dailyButton, latestLogEl } = buildToolbar()
             const { dailyPopup, repeatClickButton, stopRecordingClicks } = buildDailyPopup(dailyButton)
 
             dailyButton.addEventListener('click', async (e) => {
@@ -2039,7 +2355,9 @@
                     await releaseWakeLock()
                     setActivated(dailyButton, false, BUTTON_TEXT_STOP_CUSTOM, BUTTON_TEXT_RUN_CUSTOM)
                     isRunningMacro = null
-                    showMacroErrorPopup(`Stopped: ${stoppedMacro}\n\n${summary}`)
+                    if (ranLongEnoughForResultsPopup()) {
+                        showMacroErrorPopup(`Stopped: ${stoppedMacro}\n\n${summary}`)
+                    }
                     return
                 }
 
@@ -2071,7 +2389,24 @@
                 }
             })
 
-            const { logsButton, logsPopup } = buildLogsPopup()
+            const { logsButton, logsPopup } = buildLogsPopup(latestLogEl)
+
+            const logLineBox = document.createElement('div')
+            Object.assign(logLineBox.style, {
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                flex: '1 1 auto',
+                minWidth: '0',
+                height: '32px',
+                boxSizing: 'border-box',
+                borderRadius: '8px',
+                border: 'none',
+                background: 'rgba(6, 10, 20, 0.85)',
+                padding: '2px 10px 2px 10px'
+            })
+            logLineBox.appendChild(latestLogEl)
+            logLineBox.appendChild(logsButton)
 
             if (WARDEN) {
                 if (chrome && chrome.runtime) {
@@ -2085,14 +2420,34 @@
             }
 
             container.appendChild(dailyButton)
-            container.appendChild(debugButton)
-            container.appendChild(logsButton)
+            container.appendChild(logLineBox)
 
             const header = document.getElementById('header')
-            header.insertBefore(container, header.children[1])
+            let headerLeftBlock = header.getElementsByClassName('header__left')[0]
+            if (!headerLeftBlock) {
+                headerLeftBlock = header.getElementByTagName('div')[0]
+            }
+            
+            let headerRightBlock = header.getElementsByClassName('header__actions')[0]
+            if (!headerRightBlock) {
+                headerRightBlock = header.getElementByTagName('div')[1]
+            }
+            
+
+            // toolbar sits between the two header blocks and must fill exactly the space
+            // left over between them - the blocks keep their own size (never grow/shrink),
+            // the toolbar is the only one that grows/shrinks (see container.style.flex/minWidth above)
+            if (headerLeftBlock) {
+                headerLeftBlock.style.flex = '0 0 auto'
+            }
+            if (headerRightBlock) {
+                headerRightBlock.style.flex = '0 0 auto'
+            }
+
+            header.insertBefore(container, headerRightBlock || header.children[1])
+            
 
             setActivated(dailyButton, false, BUTTON_TEXT_STOP_CUSTOM, BUTTON_TEXT_RUN_CUSTOM)
-            setActivated(debugButton, DEBUG_CLICKS, BUTTON_TEXT_STOP_DEBUG, BUTTON_TEXT_RUN_DEBUG)
         }
 
         /// MACRO RUNNER
@@ -2134,8 +2489,32 @@
                     console.log(document.title)
                 }
 
-                if (actionType != actionDelay) {
-                    addError("Running: " + JSON.stringify(action))
+                if (LOG_ACTIONS && !(action.skipLog ?? false)) {
+                    if (action.title) {
+                        if (action.delay) {
+                            addError(action.title + "; delay: " + (action.delay ?? 0) + "ms")
+                        } else {
+                            addError(action.title)
+                        }
+                    } else if (actionType == actionDelay) {
+                        addError("Sleep: " + action.delay + "ms")
+                    } else if (actionType == actionClick) {
+                        addError("Click: " + action.x + "," + action.y + " delay: " + (action.delay ?? 0) + "ms")
+                    } else if (actionType == actionInterruptIfColor) {
+                        addError("Interrupt if color: " + action.color + " at " + action.xx + "," + action.y)
+                    } else if (actionType == actionInterruptIfNotColor) {
+                        addError("Interrupt if color is not: " + action.color + " at " + action.xx + "," + action.y)
+                    } else if (actionType == actionJump) {
+                        addError("Jump to: " + action.jumpTitle)
+                    } else if (actionType == actionJumpIfScreen) {
+                        addError("Jump to: " + action.jumpTitle + " if screen matches")
+                    } else if (actionType == actionJumpIfNotScreen) {
+                        addError("Jump to: " + action.jumpTitle + " if screen does NOT match")
+                    } else if (actionType == actionWaitForScreen) {
+                        addError("Wait for screen: " + action.pixels.map(p => "[" + p.x + "," + p.y + "] == [" + p.color + "]").join(", "))
+                    } else {
+                        addError(JSON.stringify(action))
+                    }
                 }
 
                 if (actionType == actionDelay) {
@@ -2191,7 +2570,9 @@
                             await releaseWakeLock()
 
                             localStorage.setItem(LAST_MACRO_KEY, null)
-                            showMacroErrorPopup(`${error}\n\n${getMacroSessionSummary()}`)
+                            if (ranLongEnoughForResultsPopup()) {
+                                showMacroErrorPopup(`${error}\n\n${getMacroSessionSummary()}`)
+                            }
                             await sendTelegramNotify(error)
                         }
                         return
@@ -2206,7 +2587,7 @@
 
                     if (pixels.every((p, i) => colorsAreSame(testPixels[i], p.color, p.threshold ?? threshold))) {
                         skipUntilAction = jumpTitle
-                        addError("Detected: " + jumpTitle + " " + pixels.map((p, i) => "[" + testPixels[i] + "] == [" + p.color + "]").join(", "))
+                        //addError("Detected: " + jumpTitle + " " + pixels.map((p, i) => "[" + testPixels[i] + "] == [" + p.color + "]").join(", "))
                         //document.title = "Jump detected: " + jumpTitle
                     } 
                 } else if (actionType == actionJumpIfNotScreen) {
@@ -2441,7 +2822,7 @@
                 // delays between clicks are the recorded ones; the gap after the
                 // last click (before repeating the sequence) uses the entered delay
                 const delay = isLast ? repeatDelay : (clicks[i + 1].time - click.time)
-                return { x: click.x, y: click.y, delay: delay, actionType: actionClick, title: "repeating click" }
+                return { x: click.x, y: click.y, delay: delay, actionType: actionClick, title: "Repeating click" }
             })
         }
 
@@ -2535,7 +2916,9 @@
                 isRunningMacro = null
                 setActivated(dailyButton, false, BUTTON_TEXT_STOP_CUSTOM, BUTTON_TEXT_RUN_CUSTOM)
                 await releaseWakeLock()
-                showMacroErrorPopup(`Stopped: ${MACRO_DUNGEON}\n\n${summary}`)
+                if (ranLongEnoughForResultsPopup()) {
+                    showMacroErrorPopup(`Stopped: ${MACRO_DUNGEON}\n\n${summary}`)
+                }
                 await sendTelegramNotify(`⏹ Скрипт остановлен\nВремя: ${formatNowForTelegram()}`)
                 return
             }
@@ -2561,7 +2944,7 @@
 
             // utils
             function delay(msec) {
-                return{x: 2, y: 2, delay: Math.round(msec * delayFactor), actionType: actionDelay}
+                return {delay: Math.round(msec * delayFactor), actionType: actionDelay}
             }
             function title(title) {
                 return {actionType: actionTitle, title: title}
@@ -2586,7 +2969,7 @@
                 }
             }
 
-            let delayAfterCheckHPTitle = "delay after checking titans HP"
+            let delayAfterCheckHPTitle = "Delay after checking titans HP"
             const delayAfterCheckHP = {actionType: actionDelay, delay: 0, title: delayAfterCheckHPTitle}
             const skipCheckHP = {actionType: actionJump, jumpTitle: delayAfterCheckHPTitle}
             let checkHP5 = skipCheckHP
@@ -2600,65 +2983,65 @@
             let checkIf5Titans = {pixels: popupBattleResult5Titans, actionType: actionJumpIfScreen, title: "Check if there are 5 titans", threshold: 20, jumpTitle: check5TitansHpTitle}
 
             // ======= dungeon gates =======
-            const waitForGateRight = {pixels: screenRightGate, delay: DELAY_CHECK_CYCLE, actionType: actionWaitForScreen, title: "waiting for right gate scene", threshold: 15}
-            const gateRight = {x: 0.691268, y: 0.5, delay: DELAY_AFTER_GATE_CLICKED, actionType: actionClick, title: "clicking on right gate"}
+            const waitForGateRight = {pixels: screenRightGate, delay: DELAY_CHECK_CYCLE, actionType: actionWaitForScreen, title: "Waiting for right gate scene", threshold: 15}
+            const gateRight = {x: 0.691268, y: 0.5, delay: DELAY_AFTER_GATE_CLICKED, actionType: actionClick, title: "Clicking on right gate"}
 
-            const waitForGateMid = {pixels: screenMidGate, delay: DELAY_CHECK_CYCLE, actionType: actionWaitForScreen, title: "waiting for mid gate scene", threshold: 15}
-            const gateMid = {x: 0.500, y: 0.5, delay: DELAY_AFTER_GATE_CLICKED, actionType: actionClick, title: "clicking on mid gate"}
+            const waitForGateMid = {pixels: screenMidGate, delay: DELAY_CHECK_CYCLE, actionType: actionWaitForScreen, title: "Waiting for mid gate scene", threshold: 15}
+            const gateMid = {x: 0.500, y: 0.5, delay: DELAY_AFTER_GATE_CLICKED, actionType: actionClick, title: "Clicking on mid gate"}
 
-            const waitForGateLeft = {pixels: screenLeftGate, delay: DELAY_CHECK_CYCLE, actionType: actionWaitForScreen, title: "waiting for left gate scene", threshold: 15}
-            const gateLeft = {x: 0.312, y: 0.5, delay: DELAY_AFTER_GATE_CLICKED, actionType: actionClick, title: "clicking on left gate"}
+            const waitForGateLeft = {pixels: screenLeftGate, delay: DELAY_CHECK_CYCLE, actionType: actionWaitForScreen, title: "Waiting for left gate scene", threshold: 15}
+            const gateLeft = {x: 0.312, y: 0.5, delay: DELAY_AFTER_GATE_CLICKED, actionType: actionClick, title: "Clicking on left gate"}
 
             // ======= dungeon elemental rooms =======
-            const roomSelectionTitle = "waiting for room selection popup"
+            const roomSelectionTitle = "Waiting for room selection popup"
 
             const waitFor1RoomSelection = {pixels: popupOneRoomSelection, actionType: actionWaitForScreen, threshold: 20, delay: DELAY_CHECK_CYCLE, title: roomSelectionTitle}
             const waitFor2RoomSelection = {pixels: popupTwoRoomsSelection, actionType: actionWaitForScreen, threshold: 20, delay: DELAY_CHECK_CYCLE, title: roomSelectionTitle}
-            const roomMid = {x: 0.5, y: 0.795, delay: DELAY_AFTER_ROOM_CLICKED, actionType: actionClick, title: "clicking on mid room"}
+            const roomMid = {x: 0.5, y: 0.795, delay: DELAY_AFTER_ROOM_CLICKED, actionType: actionClick, title: "Clicking on mid room"}
 
             //  ======= usage: checkRoomColors, roomLeft, roomRight =======
-            const checkRoomColors = {x: 0.31496881496881496, y: 0.6560364464692483, altX: 0.6891891891891891, delay: DELAY_CHECK_CYCLE, actionType: actionChooseRoom, title: "choosing a correct room"}
-            const roomLeft = {x: 0.3076, y: 0.8, delay: DELAY_AFTER_ROOM_CLICKED, actionType: actionClick, title: "clicking on left room"}
-            const roomRight = {x: 0.6833, y: 0.8, delay: DELAY_AFTER_ROOM_CLICKED, actionType: actionClick, title: "clicking on right room"}
+            const checkRoomColors = {x: 0.31496881496881496, y: 0.6560364464692483, altX: 0.6891891891891891, delay: DELAY_CHECK_CYCLE, actionType: actionChooseRoom, title: "Choosing a correct room"}
+            const roomLeft = {x: 0.3076, y: 0.8, delay: DELAY_AFTER_ROOM_CLICKED, actionType: actionClick, title: "Clicking on left room"}
+            const roomRight = {x: 0.6833, y: 0.8, delay: DELAY_AFTER_ROOM_CLICKED, actionType: actionClick, title: "Clicking on right room"}
             // ======= dungeon battlefield screen =======
 
-            const waitForBattlefield = {pixels: screenBattlefield, delay: DELAY_CHECK_CYCLE, actionType: actionWaitForScreen, title: "waiting for battlefield scene"}
-            const autoBattle = {x: 0.87214, y: 0.758542, delay: DELAY_AFTER_CLICKING_AUTOBATTLE, actionType: actionClick, title: "clicking autobattle"}
+            const waitForBattlefield = {pixels: screenBattlefield, delay: DELAY_CHECK_CYCLE, actionType: actionWaitForScreen, title: "Waiting for battlefield scene"}
+            const autoBattle = {x: 0.87214, y: 0.758542, delay: DELAY_AFTER_CLICKING_AUTOBATTLE, actionType: actionClick, title: "Clicking autobattle"}
 
             // ======= dungeon confirm auto-battle results screen =======
-            const waitForConfirmBattle = {pixels: popupBattleResult, delay: DELAY_CHECK_CYCLE, actionType: actionWaitForScreen, title: "waiting for battle result popup"}
+            const waitForConfirmBattle = {pixels: popupBattleResult, delay: DELAY_CHECK_CYCLE, actionType: actionWaitForScreen, title: "Waiting for battle result popup"}
 
             
-            const confirmBattle = {x: 0.641372, y: 0.822323, delay: DELAY_FOR_TITANS_WALK, actionType: actionClick, title: "clicking on confirm battle result"}
+            const confirmBattle = {x: 0.641372, y: 0.822323, delay: DELAY_FOR_TITANS_WALK, actionType: actionClick, title: "Clicking on confirm battle result"}
 
             // ======= dungeon floor finished symbol =======
-            const waitForFloor1Done = {pixels: screenFloor1Final, delay: DELAY_CHECK_CYCLE, actionType: actionWaitForScreen, title: "waiting for floor1 final scene"}
-            const floor1Done = {x: 0.7297, y: 0.47836, delay: DELAY_AFTER_CLICKING_FLOOR_REWARD, actionType: actionClick, title: "clicking on floor1 final symbol"}
+            const waitForFloor1Done = {pixels: screenFloor1Final, delay: DELAY_CHECK_CYCLE, actionType: actionWaitForScreen, title: "Waiting for floor1 final scene"}
+            const floor1Done = {x: 0.7297, y: 0.47836, delay: DELAY_AFTER_CLICKING_FLOOR_REWARD, actionType: actionClick, title: "Clicking on floor1 final symbol"}
 
-            const waitForFloor2Done = {pixels: screenFloor2Final, delay: DELAY_CHECK_CYCLE, actionType: actionWaitForScreen, title: "waiting for floor2 final scene"}
-            const floor2Done = {x: 0.27755, y: 0.47836, delay: DELAY_AFTER_CLICKING_FLOOR_REWARD, actionType: actionClick, title: "clicking on floor2 final symbol"}
+            const waitForFloor2Done = {pixels: screenFloor2Final, delay: DELAY_CHECK_CYCLE, actionType: actionWaitForScreen, title: "Waiting for floor2 final scene"}
+            const floor2Done = {x: 0.27755, y: 0.47836, delay: DELAY_AFTER_CLICKING_FLOOR_REWARD, actionType: actionClick, title: "Clicking on floor2 final symbol"}
 
 
             // ======= dungeon floor finished popup ========
-            const waitForFloorConfirm = {pixels: popupFloorReward, delay: DELAY_CHECK_CYCLE, actionType: actionWaitForScreen, title: "waiting for floor confirmation popup"}
-            const floorConfirm = {x: 0.635, y: 0.697, delay: DELAY_AFTER_FINISHING_FLOOR, actionType: actionClick, title: "clicking on floor confirmation popup"}
+            const waitForFloorConfirm = {pixels: popupFloorReward, delay: DELAY_CHECK_CYCLE, actionType: actionWaitForScreen, title: "Waiting for floor confirmation popup"}
+            const floorConfirm = {x: 0.635, y: 0.697, delay: DELAY_AFTER_FINISHING_FLOOR, actionType: actionClick, title: "Clicking on floor confirmation popup"}
 
 
             // ======= speed up titan walk =========
             const fastRightGateTitle = "Fast right gate"
-            let fastRightGateActions = [{x: 0.995370, y: 0.389100, actionType: actionClick, delay: 100}]
+            let fastRightGateActions = [{x: 0.995370, y: 0.389100, actionType: actionClick, title: "Fast pass", delay: 100}]
             for (let i=0; i<10; i++) {
-                fastRightGateActions.push({pixels: popupOneRoomSelection, actionType: actionJumpIfScreen, threshold: 20, title: fastRightGateTitle, jumpTitle: roomSelectionTitle})
-                fastRightGateActions.push({pixels: popupTwoRoomsSelection, actionType: actionJumpIfScreen, threshold: 20, title: fastRightGateTitle, jumpTitle: roomSelectionTitle})
-                fastRightGateActions.push({x: 0.995370, y: 0.389100, actionType: actionClick, delay: 100})
+                fastRightGateActions.push({pixels: popupOneRoomSelection, actionType: actionJumpIfScreen, threshold: 20, title: fastRightGateTitle, jumpTitle: roomSelectionTitle, skipLog: true})
+                fastRightGateActions.push({pixels: popupTwoRoomsSelection, actionType: actionJumpIfScreen, threshold: 20, title: fastRightGateTitle, jumpTitle: roomSelectionTitle, skipLog: true})
+                fastRightGateActions.push({x: 0.995370, y: 0.389100, actionType: actionClick, title: "Fast pass", delay: 100, skipLog: true})
             }
 
             const fastLeftGateTitle = "Fast left gate"
-            let fastLeftGateActions = [{x: 0.005370, y: 0.389100, actionType: actionClick, delay: 50}]
+            let fastLeftGateActions = [{x: 0.005370, y: 0.389100, actionType: actionClick, title: "Fast pass", delay: 100}]
             for (let i=0; i<10; i++) {
-                fastLeftGateActions.push({pixels: popupOneRoomSelection, actionType: actionJumpIfScreen, threshold: 20, title: fastLeftGateTitle, jumpTitle: roomSelectionTitle})
-                fastLeftGateActions.push({pixels: popupTwoRoomsSelection, actionType: actionJumpIfScreen, threshold: 20, title: fastLeftGateTitle, jumpTitle: roomSelectionTitle})
-                fastLeftGateActions.push({x: 0.005370, y: 0.389100, actionType: actionClick, delay: 50})
+                fastLeftGateActions.push({pixels: popupOneRoomSelection, actionType: actionJumpIfScreen, threshold: 20, title: fastLeftGateTitle, jumpTitle: roomSelectionTitle, skipLog: true})
+                fastLeftGateActions.push({pixels: popupTwoRoomsSelection, actionType: actionJumpIfScreen, threshold: 20, title: fastLeftGateTitle, jumpTitle: roomSelectionTitle, skipLog: true})
+                fastLeftGateActions.push({x: 0.005370, y: 0.389100, actionType: actionClick, title: "Fast pass", delay: 100, skipLog: true})
             }
 
             // ======== screen detection for the first floor =========
@@ -2677,7 +3060,7 @@
                 const clickOnGuildTitle = "Click on guild"
 
                 const checkHomePopup = {pixels: screenHomePopup, actionType: actionJumpIfNotScreen, title: "Checking if there is a popup", jumpTitle: waitForHomeTitle}
-                const closeHomePopup = {x: 0.971644, y: 0.054499, actionType: actionClick, title: "closing popup", delay: 1000}
+                const closeHomePopup = {x: 0.971644, y: 0.054499, actionType: actionClick, title: "Closing popup", delay: 1000}
 
                 await runActions([
                     {pixels: screenHome, actionType: actionJumpIfScreen, title: waitForHomeTitle, jumpTitle: clickOnGuildTitle},
@@ -2693,7 +3076,7 @@
                     {x: 0.594329, y: 0.908112, actionType: actionClick, title: clickOnGuildTitle},
                     {pixels: screenGuild, actionType: actionWaitForScreen, delay: DELAY_AFTER_CLICKING_GUILD, title: "Waiting for guild screen"},
                     delay(2000),
-                    {x: 0.241220, y: 0.480769, actionType: actionClick, delay: DELAY_AFTER_CLICKING_DUNGEON, title: "click on dungeon"}
+                    {x: 0.241220, y: 0.480769, actionType: actionClick, delay: DELAY_AFTER_CLICKING_DUNGEON, title: "Click on dungeon"}
                 ], MACRO_DUNGEON, 2)
             } else {
                 let nextCheckTitle = "Checking if we're on the home screen"
@@ -2825,19 +3208,19 @@
             function scrollDown(scrollTeams = 4) {
                 const y = yTeam1 + teamHeight * scrollTeams
 
-                return {x: 0.5, y: y, altX: 0.5, altY: yTeam1, delay: 100, actionType: actionDragDrop, title: "scroll +4 teams"}
+                return {x: 0.5, y: y, altX: 0.5, altY: yTeam1, delay: 100, actionType: actionDragDrop, title: "Scroll +4 teams"}
             }
             const leaveFrontierLabel = "Leave Frontier"
-            const waitForFrontier = {pixels: screenFrontier, actionType: actionWaitForScreen, delay: 5000, title: "waiting for frontier"}
-            const clickToBattle = {x: 0.909604, y: 0.888660, delay: 200, actionType: actionClick, title: "click to battle"}
-            const waitForBattlePreparation = {pixels: screenBattlePrep, actionType: actionWaitForScreen, delay: 5000, title: "waiting for battle prep."}
-            const clickAutoBattle = {x: 0.893596, y: 0.760824, delay: 200, actionType: actionClick, title: "click auto battle"}
-            const waitForLose = {pixels: screenLose, actionType: actionWaitForScreen, delay: 60000, title: "waiting for lose"}
-            const clickContinue = {x: 0.903013, y: 0.890721, delay: 200, actionType: actionClick, title: "click continue"}
+            const waitForFrontier = {pixels: screenFrontier, actionType: actionWaitForScreen, delay: 5000, title: "Waiting for frontier"}
+            const clickToBattle = {x: 0.909604, y: 0.888660, delay: 200, actionType: actionClick, title: "Click to battle"}
+            const waitForBattlePreparation = {pixels: screenBattlePrep, actionType: actionWaitForScreen, delay: 5000, title: "Waiting for battle prep."}
+            const clickAutoBattle = {x: 0.893596, y: 0.760824, delay: 200, actionType: actionClick, title: "Click auto battle"}
+            const waitForLose = {pixels: screenLose, actionType: actionWaitForScreen, delay: 60000, title: "Waiting for lose"}
+            const clickContinue = {x: 0.903013, y: 0.890721, delay: 200, actionType: actionClick, title: "Click continue"}
 
-            const clickReorderTeams = {x: 0.782407, y: 0.719899, actionType: actionClick, delay: 300, title: "click reorder teams"}
-            const waitForReorderTeams = {pixels: screenReorderTeams, actionType: actionWaitForScreen, delay: 2000, title: "waiting for reorder teams"}
-            const clickCloseReorderTeams = {x: 0.971644, y: 0.052598, actionType: actionClick, delay: 300, title: "close reorder teams"}
+            const clickReorderTeams = {x: 0.782407, y: 0.719899, actionType: actionClick, delay: 300, title: "Click reorder teams"}
+            const waitForReorderTeams = {pixels: screenReorderTeams, actionType: actionWaitForScreen, delay: 2000, title: "Waiting for reorder teams"}
+            const clickCloseReorderTeams = {x: 0.971644, y: 0.052598, actionType: actionClick, delay: 300, title: "Close reorder teams"}
 
             const battleLoop = [waitForBattlePreparation, delay(500), clickAutoBattle, waitForLose, delay(500), clickContinue, waitForFrontier, delay(500), clickToBattle]
             const clickFrontierTitle = "Click frontier"
@@ -2848,7 +3231,7 @@
                 const waitForHomeTitle = "Waiting for home screen"
 
                 const checkHomePopup = {pixels: screenHomePopup, actionType: actionJumpIfNotScreen, title: waitForHomeTitle}
-                const closeHomePopup = {x: 0.971644, y: 0.054499, actionType: actionClick, title: "closing popup", delay: 1000}
+                const closeHomePopup = {x: 0.971644, y: 0.054499, actionType: actionClick, title: "Closing popup", delay: 1000}
 
                 await runActions([
                     {pixels: screenHome, actionType: actionJumpIfScreen, title: waitForHomeTitle, jumpTitle: clickFrontierTitle},
@@ -2911,27 +3294,17 @@
             }
         }
 
-        async function toggleDebug() {
-            DEBUG_CLICKS = !DEBUG_CLICKS
-            setActivated(debugButton, DEBUG_CLICKS, BUTTON_TEXT_STOP_DEBUG, BUTTON_TEXT_RUN_DEBUG)
-            if (DEBUG_CLICKS) {
-                gameCanvas.addEventListener('click', logMouse)
-            } else {
-                gameCanvas.removeEventListener('click', logMouse)
-            }
-        }
-
         async function runExpeditions() {
-            const clickTitle = "click expedition"
+            const clickTitle = "Click expedition"
 
             function clickAndStartExpAction(x, y) {
                 return [
                     {x: x, y: y, delay: 0, actionType: actionClick, title: clickTitle},
                     {pixels: screenExpeditionOpened, actionType: actionJumpIfNotScreen, title: clickTitle},
-                    {x: 0.587384, y: 0.774398, delay: 500, actionType: actionClick, title: "click start"},
-                    {x: 0.795718, y: 0.888466, delay: 500, actionType: actionClick, title: "click auto heroes"},
-                    {x: 0.795718, y: 0.888466, delay: 500, actionType: actionClick, title: "click start with these hereos"},
-                    {x: 0.826968, y: 0.095057, delay: 500, actionType: actionClick, title: "click close"}
+                    {x: 0.587384, y: 0.774398, delay: 500, actionType: actionClick, title: "Click start"},
+                    {x: 0.795718, y: 0.888466, delay: 500, actionType: actionClick, title: "Click auto heroes"},
+                    {x: 0.795718, y: 0.888466, delay: 500, actionType: actionClick, title: "Click start with these hereos"},
+                    {x: 0.826968, y: 0.095057, delay: 500, actionType: actionClick, title: "Click close"}
                 ]
             }
 
@@ -3008,7 +3381,7 @@
                 {x: 0.877894, y: 0.753485, actionType: actionClick, delay: 1000, title: "Search icon"},
                 {x: 0.768519, y: 0.207858, actionType: actionClick, delay: 1000, title: "Camps icon"},
                 {x: 0.853588, y: 0.903676, actionType: actionClick, delay: 1000, title: "Search camp"},
-                {pixels: screenCampAttackButton, actionType: actionWaitForScreen, delay: 5000, title: "waiting for camp"},
+                {pixels: screenCampAttackButton, actionType: actionWaitForScreen, delay: 5000, title: "Waiting for camp"},
 
                 {pixels: screenCampAttackButton, actionType: actionJumpIfNotScreen, title: titleAttackCampBut}, // check if there is white Attack button with swords
                 {x: 0.657986, y: 0.490494, actionType: actionClick, delay: 1000, title: titleAttackCamp},
@@ -3020,7 +3393,7 @@
                 {x: 0.886574, y: 0.894804, actionType: actionClick, delay: 5000, title: titleStartBattle},
                 {pixels: screenCampBattleEnd, actionType: actionWaitForScreen, delay: 60000, title: "Waiting until battle ends...", threshold: 30},
                 {actionType: actionDelay, delay: 500},
-                {x: 0.914931, y: 0.893536, actionType: actionClick, delay: 5000, title: "confirm battle"}
+                {x: 0.914931, y: 0.893536, actionType: actionClick, delay: 5000, title: "Confirm battle"}
             ]
 
             let actions = [
@@ -3034,7 +3407,7 @@
 
             const leaveRealm = [
                 {pixels: screenCampSearchClosed, actionType: actionJumpIfNotScreen, title: titleLeaveRealm},
-                {x: 0.969907, y: 0.051331, actionType: actionClick, delay: 2000, title: "close search"},
+                {x: 0.969907, y: 0.051331, actionType: actionClick, delay: 2000, title: "Close search"},
                 {x: 0.046296, y: 0.897972, actionType: actionClick, delay: 2000, title: titleLeaveRealm}
             ]
             actions.push(...leaveRealm)
@@ -3043,8 +3416,8 @@
         }
 
         async function runHeroicChest(macro = MACRO_DAILY) {
-            const gotoNextActionTitle = "collect next reward"
-            const gotoNextChestTitle = "next chest"
+            const gotoNextActionTitle = "Collect next reward"
+            const gotoNextChestTitle = "Next chest"
             // heroic chests
             await runActions([
                 {actionType: actionTitle, title: "Chest"},
@@ -3074,19 +3447,19 @@
             await runActions([
                 {actionType: actionTitle, title: "Rewards"},
                 // collect free energy from shop
-                {x: 0.939815, y: 0.053232, delay: 1000, actionType: actionClick, title: "navigate emeralds"},
-                {x: 0.055, y: 0.10, delay: 500, actionType: actionClick, title: "click 1"},
-                {x: 0.158565, y: 0.885932, delay: 500, actionType: actionClick, title: "gain 1"},
-                {x: 0.055, y: 0.25, delay: 500, actionType: actionClick, title: "click 2"},
-                {x: 0.153356, y: 0.878327, delay: 500, actionType: actionClick, title: "gain 2"},
-                {x: 0.055, y: 0.40, delay: 500, actionType: actionClick, title: "click 3"},
-                {x: 0.149884, y: 0.619772, delay: 500, actionType: actionClick, title: "gain 3"},
-                {x: 0.055, y: 0.55, delay: 500, actionType: actionClick, title: "click 4"},
-                {x: 0.917824, y: 0.233207, delay: 500, actionType: actionClick, title: "gain 4"},
-                {x: 0.055, y: 0.7, delay: 500, actionType: actionClick, title: "click 5"},
-                {x: 0.917824, y: 0.233207, delay: 500, actionType: actionClick, title: "gain 5"},
-                {x: 0.055, y: 0.85, delay: 500, actionType: actionClick, title: "click 6"},
-                {x: 0.971065, y: 0.04943, delay: 2000, actionType: actionClick, title: "close emeralds"},
+                {x: 0.939815, y: 0.053232, delay: 1000, actionType: actionClick, title: "Navigate emeralds"},
+                {x: 0.055, y: 0.10, delay: 500, actionType: actionClick, title: "Click 1"},
+                {x: 0.158565, y: 0.885932, delay: 500, actionType: actionClick, title: "Gain 1"},
+                {x: 0.055, y: 0.25, delay: 500, actionType: actionClick, title: "Click 2"},
+                {x: 0.153356, y: 0.878327, delay: 500, actionType: actionClick, title: "Gain 2"},
+                {x: 0.055, y: 0.40, delay: 500, actionType: actionClick, title: "Click 3"},
+                {x: 0.149884, y: 0.619772, delay: 500, actionType: actionClick, title: "Gain 3"},
+                {x: 0.055, y: 0.55, delay: 500, actionType: actionClick, title: "Click 4"},
+                {x: 0.917824, y: 0.233207, delay: 500, actionType: actionClick, title: "Gain 4"},
+                {x: 0.055, y: 0.7, delay: 500, actionType: actionClick, title: "Click 5"},
+                {x: 0.917824, y: 0.233207, delay: 500, actionType: actionClick, title: "Gain 5"},
+                {x: 0.055, y: 0.85, delay: 500, actionType: actionClick, title: "Click 6"},
+                {x: 0.971065, y: 0.04943, delay: 2000, actionType: actionClick, title: "Close emeralds"},
 
                 // daily rewards
                 {x: 0.043403, y: 0.732573, actionType: actionClick, delay: 1000, title: "Open daily rewards"},
@@ -3096,7 +3469,7 @@
                 {x: 0.939236, y: 0.882129, actionType: actionClick, delay: 200},
                 {x: 0.939236, y: 0.882129, actionType: actionClick, delay: 200},
                 {x: 0.939236, y: 0.882129, actionType: actionClick, delay: 200},
-                {x: 0.971065, y: 0.048162, actionType: actionClick, delay: 2000, title: "close rewards"},
+                {x: 0.971065, y: 0.048162, actionType: actionClick, delay: 2000, title: "Close rewards"},
 
             ], macro)
         }
