@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dungeon runner
 // @namespace    http://tampermonkey.net/
-// @version      2026-08-23_14:13
+// @version      2026-08-24_19:02
 // @description  try to take over the world!
 // @author       You
 // @match        https://www.hero-wars-alliance.com/*
@@ -32,7 +32,7 @@
     const MAX_FLOORS = 10000
     let DELAY_AFTER_CLICKING_GUILD = Number(localStorage.getItem('DELAY_AFTER_CLICKING_GUILD') || 5000)
     let DELAY_AFTER_CLICKING_DUNGEON = Number(localStorage.getItem('DELAY_AFTER_CLICKING_DUNGEON') || 5000)
-    let EXTRA_GATE_DELAY_FIRST_FLOOR = Number(localStorage.getItem('EXTRA_GATE_DELAY_FIRST_FLOOR') || 0)
+    let EXTRA_GATE_DELAY_FIRST_FLOOR = Number(localStorage.getItem('EXTRA_GATE_DELAY_FIRST_FLOOR') || 500)
     let EXTRA_WALK_DELAY_FIRST_FLOOR = Number(localStorage.getItem('EXTRA_WALK_DELAY_FIRST_FLOOR') || 2000)
     let EXTRA_FLOOR_DELAY_FIRST_FLOOR = Number(localStorage.getItem('EXTRA_FLOOR_DELAY_FIRST_FLOOR') || 3000)
 
@@ -68,6 +68,7 @@
     const MACRO_DAILY = 'daily'
     const MACRO_FRONTIER = 'frontier'
     const MACRO_REPEAT_CLICK = 'repeat_click'
+    const LAST_MACRO_KEY = 'last_macro'
 
     const DEFAULT_ORDER = [
         //{ id: 'mixed', label: '⚡', background: 'linear-gradient(to bottom, #806104, #FFC107)', bColor: '#806104' },
@@ -81,8 +82,9 @@
     // service actions
     const actionTitle = 1
     const actionDelay = 2
-    const actionJumpIf = 3
-    const actionJumpIfNot = 4
+    const actionJump = 3
+    const actionJumpIfScreen = 4
+    const actionJumpIfNotScreen = 5
 
     // clicker
     const actionClick = 10
@@ -90,10 +92,60 @@
 
     // actions with some logic
     const actionChooseRoom = 21
-    const actionWaitForColor = 22
-    const actionWaitForColorNot = 23
+    const actionWaitForScreen = 22
     const actionInterruptIfColor = 24
     const actionInterruptIfNotColor = 25
+
+    
+    // ======== screens (control pixels used to detect game state) ==========
+    // ============ Home ===========
+    const screenHomePopup = [{x: 0.971644, y: 0.054499, color: [245,209,117]}]
+    const screenHomeScreen = [{x: 0.59375, y: 0.908112, color: [235,236,199]}]
+    const screenGuildScreen = [{x: 0.273832, y: 0.612474, color: [72,39,0]}, {x: 0.241437, y: 0.297075, color: [213,21,26]}]
+    
+    // ============ Dungeon ===========
+    const screenRightGate = [{x: 0.695023, y: 0.105830, color: [226,226,235]}]
+    const screenMidGate = [{x: 0.500000, y: 0.104563, color: [232,233,240]}]
+    const screenLeftGate = [{x: 0.314815, y: 0.107098, color: [235,234,241]}]
+    const popupOneRoomSelection = [{x: 0.714699, y: 0.098226, color: [241,192,102]}]
+    const popupTwoRoomsSelection = [{x: 0.876736, y: 0.102028, color: [244,203,113]}]
+    const screenBattlefield = [{x: 0.039352, y: 0.047529, color: [234,203,151]}]
+    const popupBattleResult = [{x: 0.60083, y: 0.127563, color: [137,1,0]}]
+    const popupBattleResult5Titans = [{x: 0.500418, y: 0.287934, color: [235,235,235]}]
+    const screenFloor1Final = [{x: 0.3163664839467502, y: 0.1320754716981132, color: [18,21,26]}]
+    const screenFloor2Final = [{x: 0.6985121378230227, y: 0.14408233276157806, color: [20,22,28]}]
+    const popupFloorReward = [{x: 0.5, y: 0.5, color: [22,12,8]}]
+    const screenPastRightGate = [{x: 0.6703741152679474, y: 0.11393805309734513, color: [29,37,83]}]
+    const screenPastMidGate = [{x: 0.4752275025278059, y: 0.11172566371681415, color: [28,36,81]}]
+    const screenPastLeftGate = [{x: 0.2901921132457027, y: 0.11172566371681415, color: [28,36,81]}]
+    
+    // ============ Frontier ===========
+    const screenFrontier = [{x: 0.049190, y: 0.434094, color: [237,209,158]}]
+    const screenBattlePrep = [{x: 0.841435, y: 0.766195, color: [65,158,28]}]
+    const screenLose = [{x: 0.497106, y: 0.251584, color: [180,14,36]}]
+    const screenReorderTeams = [{x: 0.499421, y: 0.004436, color: [3,6,9]}]
+    
+    // ============ Expedition ===========
+    const screenExpeditionOpened = [{x: 0.721644, y: 0.143219, color: [24,12,8]}]
+    const screenValkyrieGift = [{x: 0.659722, y: 0.903676, color: [73,158,22]}]
+    
+    // ============ Hydra ===========
+    const screenHydraNoMoreFairies = [{x: 0.823495, y: 0.067807, color: [30,15,20]}]
+    
+    // ============ Tower ===========
+    const screenTowerChestAvailable = [{x: 0.638889, y: 0.731939, color: [69, 166, 31]}]
+    const screenTowerRewardPopup = [{x: 0.711806, y: 0.900507, color: [68,165,30]}]
+    
+    // ============ Camp ===========
+    const screenCampAttackButton = [{x: 0.659722, y: 0.493663, color: [255,253,239]}]
+    const screenCampBattleTransition = [{x: 0.500000, y: 0.500000, color: [0,0,0]}]
+    const screenCampPopupAttackButton = [{x: 0.460648, y: 0.756654, color: [56,146,0]}]
+    const screenCampBattleEnd = [{x: 0.860532, y: 0.867554, color: [92,192,35]}]
+    const screenCampSearchClosed = [{x: 0.854167, y: 0.527883, color: [36,48,67]}]
+    
+    // ============ Chest ===========
+    const screenChestRewardPopup = [{x: 0.381366, y: 0.050697, color: [255,250,187]}]
+    const screenFreeChestAvailable = [{x: 0.409144, y: 0.857414, color: [169,255,190]}]
 
 
     // ======== REMOTE CONTROL via own Telegram bot ==========
@@ -191,11 +243,11 @@
         const time = now.toTimeString().slice(0, 8);
 
         const span = document.createElement('div')
-        span.textContent = "[" + time + "] " + msg
+        span.textContent = "[" + time + "] " + msg.slice(0, 200);
 
         container.appendChild(span)
 
-        while (container.children.length > 10) {
+        while (container.children.length > 20) {
             container.removeChild(container.firstChild)
         }
 
@@ -205,6 +257,79 @@
             const logs = Array.from(container.children).map(el => el.textContent)
             localStorage.setItem(PERSISTED_LOGS_KEY, JSON.stringify(logs))
         }
+    }
+
+    let macroErrorPopupEl = null
+    function showMacroErrorPopup(message) {
+        if (!macroErrorPopupEl) {
+            macroErrorPopupEl = document.createElement('div')
+            macroErrorPopupEl.id = 'macroErrorPopup'
+            Object.assign(macroErrorPopupEl.style, {
+                position: 'fixed',
+                display: 'none',
+                zIndex: '9999999',
+                minWidth: '320px',
+                maxWidth: '480px',
+                padding: '16px',
+                border: '1px solid rgb(212,161,110)',
+                borderRadius: '10px',
+                background: 'rgb(14,20,35)',
+                boxShadow: '0 0 18px rgba(0,140,255,0.3)',
+                color: '#d9ecff',
+                fontSize: '14px',
+                fontFamily: 'Trebuchet MS, Verdana, sans-serif',
+                backdropFilter: 'blur(4px)'
+            })
+
+            const textEl = document.createElement('div')
+            textEl.id = 'macroErrorPopupText'
+            Object.assign(textEl.style, {
+                marginBottom: '12px',
+                wordBreak: 'break-word'
+            })
+            macroErrorPopupEl.appendChild(textEl)
+
+            const okButton = document.createElement('button')
+            okButton.textContent = 'OK'
+            Object.assign(okButton.style, {
+                display: 'block',
+                marginLeft: 'auto',
+                marginRight: 'auto',
+                background: 'linear-gradient(180deg, #8bd0ff 0%, #2f7fc4 55%, #1a4f80 100%)',
+                color: '#eef7ff',
+                border: '1px solid #7ec8f2',
+                borderRadius: '8px',
+                padding: '4px 16px',
+                fontWeight: 'bold',
+                cursor: 'pointer',
+                textShadow: '0 1px 2px rgba(0,0,0,0.7)',
+                boxShadow: '0 0 10px rgba(80,180,255,0.3), inset 0 1px 0 rgba(255,255,255,0.25)',
+                transition: '0.15s ease'
+            })
+            okButton.onmouseenter = () => {
+                okButton.style.filter = 'brightness(1.12)'
+            }
+            okButton.onmouseleave = () => {
+                okButton.style.filter = 'brightness(1)'
+            }
+            okButton.addEventListener('click', (e) => {
+                e.stopPropagation()
+                macroErrorPopupEl.style.display = 'none'
+            })
+            macroErrorPopupEl.appendChild(okButton)
+
+            document.body.appendChild(macroErrorPopupEl)
+        }
+
+        macroErrorPopupEl.querySelector('#macroErrorPopupText').textContent = message
+
+        const anchor = document.getElementById('dailyButton')
+        if (anchor) {
+            const rect = anchor.getBoundingClientRect()
+            macroErrorPopupEl.style.left = `${rect.left}px`
+            macroErrorPopupEl.style.top = `${rect.bottom + 6}px`
+        }
+        macroErrorPopupEl.style.display = 'block'
     }
 
     // counts reloads towards the "reloads: [N]" toolbar indicator, notifies Telegram
@@ -411,6 +536,36 @@
         let macroTimeEl = null
         let macroTimerInterval = null
 
+        //// =========== ELEMENTS PRIORITY =========== ////
+        const STORAGE_KEY = 'elements_priority'
+        let elementsOrder = loadOrder()
+        function loadOrder() {
+            try {
+                const saved = JSON.parse(
+                    localStorage.getItem(STORAGE_KEY)
+                )
+                if (!Array.isArray(saved)) {
+                    return DEFAULT_ORDER
+                }
+                const mapped = saved
+                    .map(id => DEFAULT_ORDER.find(x => x.id === id))
+                    .filter(Boolean)
+                if (mapped.length !== DEFAULT_ORDER.length) {
+                    return DEFAULT_ORDER
+                }
+                return mapped
+            } catch {
+                return DEFAULT_ORDER
+            }
+        }
+
+        function saveOrder() {
+            localStorage.setItem(
+                STORAGE_KEY,
+                JSON.stringify(elementsOrder.map(x => x.id))
+            )
+        }
+
         function formatDuration(ms) {
             const totalSeconds = Math.max(0, Math.floor(ms / 1000))
             const hours = Math.floor(totalSeconds / 3600)
@@ -444,7 +599,7 @@
         }
 
         function stopMacroSession() {
-            localStorage.setItem("last_macro", null)
+            localStorage.setItem(LAST_MACRO_KEY, null)
 
             if (macroTimerInterval != null) {
                 clearInterval(macroTimerInterval)
@@ -499,28 +654,27 @@
                 if (!req) return
                 pendingRead = null
 
-                gl.readPixels(
-                    req.x,
-                    gl.canvas.height - req.y,
-                    1,
-                    1,
-                    gl.RGBA,
-                    gl.UNSIGNED_BYTE,
-                    pixels
-                )
+                const colors = req.coords.map(([x, y]) => {
+                    gl.readPixels(
+                        x,
+                        gl.canvas.height - y,
+                        1,
+                        1,
+                        gl.RGBA,
+                        gl.UNSIGNED_BYTE,
+                        pixels
+                    )
 
-                req.resolve([
-                    pixels[0],
-                    pixels[1],
-                    pixels[2],
-                    pixels[3]
-                ])
+                    return [pixels[0], pixels[1], pixels[2]]
+                })
+
+                req.resolve(colors)
             })
         }
 
-        function readPixelOnDraw(x, y) {
+        function readColorsAtCoords(coords) {
             return new Promise(resolve => {
-                pendingRead = { x, y, resolve }
+                pendingRead = { coords, resolve }
             })
         }
 
@@ -770,7 +924,7 @@
             debugButton.id = 'debugButton'
             debugButton.textContent = BUTTON_TEXT_RUN_DEBUG
 
-            Object.assign(debugButton.style, greenButtonStyle)        
+            Object.assign(debugButton.style, greenButtonStyle)
             debugButton.onmouseenter = () => {
                 debugButton.style.filter = 'brightness(1.12)'
             }
@@ -778,9 +932,6 @@
                 debugButton.style.filter = 'brightness(1)'
             }
             debugButton.addEventListener('click', toggleDebug)
-
-            //// =========== ELEMENTS PRIORITY =========== ////
-            const STORAGE_KEY = 'elements_priority'
 
             // ---------- container ----------
             const elements = document.createElement('div')
@@ -792,35 +943,6 @@
                 userSelect: 'none',
                 zIndex: '999999'
             })
-
-            // ---------- storage ----------
-            function loadOrder() {
-                try {
-                    const saved = JSON.parse(
-                        localStorage.getItem(STORAGE_KEY)
-                    )
-                    if (!Array.isArray(saved)) {
-                        return DEFAULT_ORDER
-                    }
-                    const mapped = saved
-                    .map(id => DEFAULT_ORDER.find(x => x.id === id))
-                    .filter(Boolean)
-                    if (mapped.length !== DEFAULT_ORDER.length) {
-                        return DEFAULT_ORDER
-                    }
-                    return mapped
-                } catch {
-                    return DEFAULT_ORDER
-                }
-            }
-
-            let elementsOrder = loadOrder()
-            function saveOrder() {
-                localStorage.setItem(
-                    STORAGE_KEY,
-                    JSON.stringify(elementsOrder.map(x => x.id))
-                )
-            }
 
             // ---------- render ----------
             function render() {
@@ -925,10 +1047,6 @@
                 })
             }
 
-            window.getElementsPriority = function() {
-                return elementsOrder.map(x => x.id)
-            }
-
             render()
 
             // =========== DAILY ===========
@@ -937,7 +1055,9 @@
             dailyButton.id = 'dailyButton'
             dailyButton.textContent = BUTTON_TEXT_RUN_CUSTOM
 
-            Object.assign(dailyButton.style, greenButtonStyle)
+            Object.assign(dailyButton.style, greenButtonStyle, {
+                marginLeft: '10px'
+            })
             
             dailyButton.onmouseenter = () => {
                 dailyButton.style.filter = 'brightness(1.12)'
@@ -954,14 +1074,14 @@
             Object.assign(macroTimeEl.style, {
                 color: '#fff6d6',
                 fontSize: '12px',
-                padding: '4px 6px',
-                marginLeft: '6px',
-                marginRight: '6px',
+                padding: '6px 10px',
+                marginLeft: '10px',
+                marginRight: '10px',
                 borderRadius: '6px',
                 border: '1px solid rgb(212,161,110)',
             })
 
-            startMacroSession(true)
+            //startMacroSession(true)
 
             // ---------- popup ----------
 
@@ -1605,7 +1725,7 @@
                 { key: 'DELAY_CHECK_CYCLE', label: 'Max wait time until any required screen appears', defaultValue: 5000, getValue: () => DELAY_CHECK_CYCLE, setValue: v => { DELAY_CHECK_CYCLE = v } },
                 { key: 'DELAY_AFTER_CLICKING_GUILD', label: 'Delay after clicking on "Guild"', defaultValue: 5000, getValue: () => DELAY_AFTER_CLICKING_GUILD, setValue: v => { DELAY_AFTER_CLICKING_GUILD = v } },
                 { key: 'DELAY_AFTER_CLICKING_DUNGEON', label: 'Delay after clicking on "Dungeon"', defaultValue: 5000, getValue: () => DELAY_AFTER_CLICKING_DUNGEON, setValue: v => { DELAY_AFTER_CLICKING_DUNGEON = v } },
-                { key: 'EXTRA_GATE_DELAY_FIRST_FLOOR', label: 'Extra delay for the first floor gate', defaultValue: 0, getValue: () => EXTRA_GATE_DELAY_FIRST_FLOOR, setValue: v => { EXTRA_GATE_DELAY_FIRST_FLOOR = v } },
+                { key: 'EXTRA_GATE_DELAY_FIRST_FLOOR', label: 'Extra delay for the first floor gate', defaultValue: 500, getValue: () => EXTRA_GATE_DELAY_FIRST_FLOOR, setValue: v => { EXTRA_GATE_DELAY_FIRST_FLOOR = v } },
                 { key: 'EXTRA_WALK_DELAY_FIRST_FLOOR', label: 'Extra walk delay for the first floor', defaultValue: 2000, getValue: () => EXTRA_WALK_DELAY_FIRST_FLOOR, setValue: v => { EXTRA_WALK_DELAY_FIRST_FLOOR = v } },
                 { key: 'EXTRA_FLOOR_DELAY_FIRST_FLOOR', label: 'Extra floor delay for the first floor', defaultValue: 3000, getValue: () => EXTRA_FLOOR_DELAY_FIRST_FLOOR, setValue: v => { EXTRA_FLOOR_DELAY_FIRST_FLOOR = v } },
                 { key: 'EXTRA_DELAY_BEFORE_CONFIRM_BATTLE', label: 'Extra delay after HP check', defaultValue: 0, getValue: () => EXTRA_DELAY_BEFORE_CONFIRM_BATTLE, setValue: v => { EXTRA_DELAY_BEFORE_CONFIRM_BATTLE = v } },
@@ -1748,7 +1868,10 @@
             logsButton.id = 'logsButton'
             logsButton.textContent = '📋 Logs'
             
-            Object.assign(logsButton.style, blueButtonStyle)
+            Object.assign(logsButton.style, blueButtonStyle, { 
+                marginLeft: '10px',
+                marginRight: '10px',
+            })
             logsButton.onmouseenter = () => {
                 logsButton.style.filter = 'brightness(1.12)'
             }
@@ -1911,16 +2034,7 @@
                 }
 
                 const {
-                    x = 0,
-                    y = 0,
-                    xx = [],
-                    color = [],
-                    altX = 0,
-                    altY = 0,
-                    delay = 0,
                     title = "",
-                    jumpTitle = title,
-                    threshold = COLORS_MATCH_THRESHOLD,
                     actionType = actionClick
                 } = action
 
@@ -1937,41 +2051,37 @@
                     continue
                 }
 
-                if (title != "" && actionType != actionJumpIf && actionType != actionJumpIfNot) {
+                if (title != "" && actionType != actionJumpIfScreen && actionType != actionJumpIfNotScreen && actionType != actionJump) {
                     document.title = lvlTitle + ": " + title
                     console.log(document.title)
                 }
 
+                if (actionType != actionDelay) {
+                    addError("Running: " + JSON.stringify(action))
+                }
+
                 if (actionType == actionDelay) {
+                    const { delay = 0 } = action
                     if (delay > 0) {
                         await sleep(delay, macro)
                     }
                 } else if (actionType == actionInterruptIfColor || actionType == actionInterruptIfNotColor) {
+                    const { xx = [], y = 0, color = [], threshold = COLORS_MATCH_THRESHOLD } = action
                     let isOk = true
                     let titanI = 0
                     let titanX = 0
                     let testPixel = []
 
-                    for (let g=0; g<xx.length; g++) {
-                        const hp = xx[g]
-                        isOk = true
-                        for (let i=0; i<hp.length; i++) {
-                            let testPixel = []
-                            testPixel = await readPixelOnDraw(
-                                gameArea.width * hp[i] * canvasScaleX,
-                                gameArea.height * y * canvasScaleY,
-                            )
+                    for (let i = 0; i < xx.length; i++) {
+                        ;[testPixel] = await readColorsAtCoords([
+                            [gameArea.width * xx[i] * canvasScaleX, gameArea.height * y * canvasScaleY],
+                        ])
 
-                            if ((actionType == actionInterruptIfColor && colorsAreSame(testPixel, color, threshold)) || (actionType == actionInterruptIfNotColor && !colorsAreSame(testPixel, color, threshold))) {
-                                isOk = false
-                                titanI = i
-                                titanX = hp[i]
-                                addError("HP check failed for " + hp.length + " titans")
-                                break
-                            }
-                        }
-
-                        if (isOk) {
+                        if ((actionType == actionInterruptIfColor && colorsAreSame(testPixel, color, threshold)) || (actionType == actionInterruptIfNotColor && !colorsAreSame(testPixel, color, threshold))) {
+                            isOk = false
+                            titanI = i
+                            titanX = xx[i]
+                            addError("HP check failed for " + xx.length + " titans")
                             break
                         }
                     }
@@ -1979,24 +2089,15 @@
                     if (!isOk) {
                         await sleep(5000, macro)
                         isOk = true
-                        for (let g=0; g<xx.length; g++) {
-                            const hp = xx[g]
-                            isOk = true
-                            for (let i=0; i<hp.length; i++) {
-                                testPixel = await readPixelOnDraw(
-                                    gameArea.width * hp[i] * canvasScaleX,
-                                    gameArea.height * y * canvasScaleY,
-                                )
-                                if ((actionType == actionInterruptIfColor && colorsAreSame(testPixel, color, threshold)) || (actionType == actionInterruptIfNotColor && !colorsAreSame(testPixel, color, threshold))) {
-                                    isOk = false
-                                    titanI = i
-                                    titanX = hp[i]
-                                    addError("HP check failed for " + hp.length + " titans")
-                                    break
-                                }
-                            }
-
-                            if (isOk) {
+                        for (let i = 0; i < xx.length; i++) {
+                            ;[testPixel] = await readColorsAtCoords([
+                                [gameArea.width * xx[i] * canvasScaleX, gameArea.height * y * canvasScaleY],
+                            ])
+                            if ((actionType == actionInterruptIfColor && colorsAreSame(testPixel, color, threshold)) || (actionType == actionInterruptIfNotColor && !colorsAreSame(testPixel, color, threshold))) {
+                                isOk = false
+                                titanI = i
+                                titanX = xx[i]
+                                addError("HP check failed for " + xx.length + " titans")
                                 break
                             }
                         }
@@ -2011,98 +2112,81 @@
                             isRunningMacro = null
                             await releaseWakeLock()
 
-                            localStorage.setItem("last_macro", MACRO_FRONTIER)
-                            reloadPage('низкое HP титана: ' + error)
+                            localStorage.setItem(LAST_MACRO_KEY, null)
+                            showMacroErrorPopup(error)
+                            await sendTelegramNotify(error)
                         }
                         return
                     }
-                } else if (actionType == actionJumpIf) {
-                    let testPixel = await readPixelOnDraw(
-                        gameArea.width * x * canvasScaleX,
-                        gameArea.height * y * canvasScaleY,
-                    )
+                } else if (actionType == actionJump) {
+                    const { jumpTitle = title } = action
+                    skipUntilAction = jumpTitle
+                    //addError("Jumping to: " + jumpTitle)
+                } else if (actionType == actionJumpIfScreen) {
+                    const { screen = [], threshold = COLORS_MATCH_THRESHOLD, jumpTitle = title } = action
+                    const testPixels = await readColorsAtCoords(screen.map(p => [gameArea.width * p.x * canvasScaleX, gameArea.height * p.y * canvasScaleY]))
 
-                    if (colorsAreSame(testPixel, color, threshold)) {
+                    if (screen.every((p, i) => colorsAreSame(testPixels[i], p.color, threshold))) {
                         skipUntilAction = jumpTitle
-                        addError("Detected: " + jumpTitle + " [" + testPixel[0] + ',' + testPixel[1] + ',' + testPixel[2] + '] == [' + color[0] + ',' + color[1] + ',' + color[2] + ']')
+                        addError("Detected: " + jumpTitle + " " + screen.map((p, i) => "[" + testPixels[i] + "] == [" + p.color + "]").join(", "))
                         //document.title = "Jump detected: " + jumpTitle
-                        //console.log("Room detected. Next action is:", title, " // ", testPixel[0], testPixel[1], testPixel[2], "!=", color[0], color[1], color[2])
                     } else {
-                        lastPixel = testPixel
+                        lastPixel = testPixels[0]
                     }
-                } else if (actionType == actionJumpIfNot) {
-                    let testPixel = await readPixelOnDraw(
-                        gameArea.width * x * canvasScaleX,
-                        gameArea.height * y * canvasScaleY,
-                    )
-                    if (!colorsAreSame(testPixel, color, threshold)) {
+                } else if (actionType == actionJumpIfNotScreen) {
+                    const { screen = [], threshold = COLORS_MATCH_THRESHOLD, jumpTitle = title } = action
+                    const testPixels = await readColorsAtCoords(screen.map(p => [gameArea.width * p.x * canvasScaleX, gameArea.height * p.y * canvasScaleY]))
+                    if (!screen.every((p, i) => colorsAreSame(testPixels[i], p.color, threshold))) {
                         skipUntilAction = jumpTitle
                         //document.title = "Jump detected: " + jumpTitle
-                        //console.log("Conditional jump. Next action is:", title, " // ", testPixel[0], testPixel[1], testPixel[2], "==", color[0], color[1], color[2])
                     }
-                } else if (actionType == actionWaitForColorNot) {
-                    let maxDelay = delay
-                    let pixel = await readPixelOnDraw((gameArea.width * x) * canvasScaleX, (gameArea.height * y) * canvasScaleY)
-
-                    do {
-                        pixel = await readPixelOnDraw((gameArea.width * x) * canvasScaleX, (gameArea.height * y) * canvasScaleY)
-                        if (!colorsAreSame(pixel, color, threshold)) {
-                            break
-                        }
-                        await sleep(100, macro)
-                        maxDelay -= 100
-                        if (isRunningMacro != macro) return
-                    } while (maxDelay > 0);
-
-                    if (colorsAreSame(pixel, color, threshold)) {
-                        document.title = "failed " + lvlTitle + ": " + title
-                        addError("failed waiting " + title + " [" + pixel[0] + "," + pixel[1] +","+ pixel[2] + "] != [" + color[0] +","+ color[1]+","+ color[2] + "]")
-                        reloadPage('не дождались нужного цвета: ' + title)
-                        break
-                    }
-                } else if (actionType == actionWaitForColor) {
+                } else if (actionType == actionWaitForScreen) {
+                    const { screen = [], delay = 0, threshold = COLORS_MATCH_THRESHOLD } = action
                     let retries = maxRetries
                     let maxDelay = delay
-                    let pixel = []
+                    let testPixels = []
+                    let allMatch = false
+                    const describeMismatch = () => screen.map((p, i) => "[" + testPixels[i] + "] != [" + p.color + "]").join(", ")
                     do {
                         await sleep(100, macro)
                         maxDelay -= 100
                         if (isRunningMacro != macro) return
-                        pixel = await readPixelOnDraw((gameArea.width * x) * canvasScaleX, (gameArea.height * y) * canvasScaleY)
+                        testPixels = await readColorsAtCoords(screen.map(p => [(gameArea.width * p.x) * canvasScaleX, (gameArea.height * p.y) * canvasScaleY]))
+                        allMatch = screen.every((p, i) => colorsAreSame(testPixels[i], p.color, threshold))
                         if (maxDelay <= 0) {
                             if (maxRetries == 0) {
                                 document.title = "failed " + lvlTitle + ": " + title
-                                addError("failed waiting " + title + " [" + pixel[0] + "," + pixel[1] +","+ pixel[2] + "] != [" + color[0] +","+ color[1]+","+ color[2] + "]")
+                                addError("failed waiting " + title + " " + describeMismatch())
                                 break
                             }
                             // =========== didn't see the required color => try to click again and wait one more time ==========
                             if (retries > 0) {
                                 document.title = "failed " + lvlTitle + ": " + title
-                                addError("popup detection: [" + lastPixel[0] + "," + lastPixel[1] + "," + lastPixel[2] + "]")
-                                addError("re-clicking (retries:" + retries + ") " + title + " [" + pixel[0] + "," + pixel[1] +","+ pixel[2] + "] != [" + color[0] +","+ color[1]+","+ color[2] + "]")
+                                // addError("popup detection: [" + lastPixel[0] + "," + lastPixel[1] + "," + lastPixel[2] + "]")
+                                addError("re-clicking (retries:" + retries + ") " + title + " " + describeMismatch())
                                 retries--
                                 maxDelay = MAX_WAIT_BEFORE_RETRY
                                 await runActions([prevClickAction], macro)
                             } else {
                                 document.title = "skipped " + lvlTitle + ": " + title
-                                addError("skipped waiting " + lvlTitle + ": " + title + " [" + pixel[0] + "," + pixel[1] +","+ pixel[2] + "] != [" + color[0] +","+ color[1]+","+ color[2] + "]")
+                                addError("skipped waiting " + lvlTitle + ": " + title + " " + describeMismatch())
                                 if (RELOAD_PAGE_ON_FAILURE) {
                                     reloadPage('превышено число попыток: ' + lvlTitle + ' / ' + title)
                                 }
                                 break
                             }
                         }
-                    } while (!colorsAreSame(pixel, color, threshold));
+                    } while (!allMatch);
                 } else if (actionType == actionChooseRoom) {
-                    let leftPixel = await readPixelOnDraw(gameArea.width * x * canvasScaleX,gameArea.height * y * canvasScaleY)
+                    const { x = 0, y = 0, altX = 0 } = action
+                    const [leftPixel, rightPixel] = await readColorsAtCoords([
+                        [gameArea.width * x * canvasScaleX, gameArea.height * y * canvasScaleY],
+                        [gameArea.width * altX * canvasScaleX, gameArea.height * y * canvasScaleY],
+                    ])
                     let leftCategory = getColorCategory(leftPixel)
-                    let leftColor = `rgb(${leftPixel[0]}, ${leftPixel[1]}, ${leftPixel[2]})`
-
-                    let rightPixel = await readPixelOnDraw(gameArea.width * altX * canvasScaleX,gameArea.height * y * canvasScaleY)
                     let rightCategory = getColorCategory(rightPixel)
-                    let rightColor = `rgb(${rightPixel[0]}, ${rightPixel[1]}, ${rightPixel[2]})`
-
-                    const priority = window.getElementsPriority()
+                    
+                    const priority = elementsOrder.map(x => x.id)
                     const chooseRight = priority.indexOf(rightCategory) <= priority.indexOf(leftCategory)
                     if (chooseRight) {
                         skipActions = 1
@@ -2117,12 +2201,14 @@
                         window.setActiveElements([])
                     }
                 } else if (actionType == actionClick) {
+                    const { x = 0, y = 0, delay = 0 } = action
                     prevClickAction = action
                     await runUnityInput(target, x, y)
                     if (delay > 0) {
                         await sleep(delay, macro)
                     }
                 } else if (actionType == actionDragDrop) {
+                    const { x = 0, y = 0, altX = 0, altY = 0, delay = 0 } = action
                     await runUnityDrag(target, x, y, altX, altY, 20, delay)
                 }
             }
@@ -2258,11 +2344,10 @@
 
             await sleep(1000)
 
-            const pixel = await readPixelOnDraw(gameX * canvasScaleX, gameY * canvasScaleY, 100)
+            const [pixel] = await readColorsAtCoords([[gameX * canvasScaleX, gameY * canvasScaleY]])
             const r = pixel[0]
             const g = pixel[1]
             const b = pixel[2]
-            const a = pixel[3]
             const x = Number((gameX / gameArea.width).toFixed(6))
             const y = Number((gameY / gameArea.height).toFixed(6))
             const clickObj = {
@@ -2271,7 +2356,7 @@
                 color: [r,g,b],
             }
 
-            addError(JSON.stringify(clickObj))
+            addError('{x: ' + clickObj.x + ', y: ' + clickObj.y + ', color: [' + clickObj.color.join(',') + ']}')
             //console.log(JSON.stringify(clickObj))
         }
 
@@ -2377,7 +2462,7 @@
                 await sendTelegramNotify(`⏹ Скрипт остановлен\nВремя: ${formatNowForTelegram()}`)
                 return
             }
-            localStorage.setItem("last_macro", MACRO_DUNGEON)
+            localStorage.setItem(LAST_MACRO_KEY, MACRO_DUNGEON)
 
             setActivated(dailyButton, true, BUTTON_TEXT_STOP_MACRO + MACRO_DUNGEON, BUTTON_TEXT_RUN_CUSTOM)
             isRunningMacro = MACRO_DUNGEON
@@ -2410,33 +2495,48 @@
             }
 
 
+            // titans hp control points (for 5 and 4 titans)
             const titansHp5Points = [[0.316481, 0.368048], [0.39636, 0.446916], [0.4752275, 0.527806], [0.555106, 0.608696], [0.634985, 0.688574]]
             const titansHp4Points = [[0.354745, 0.406829], [0.434606, 0.48669], [0.514468, 0.565972], [0.59375, 0.645833]]
-
-            let titansHP = [[0,0,0,0,0], [0,0,0,0]]
+            let titansHP5 = [0,0,0,0,0]
+            let titansHP4 = [0,0,0,0]
             if (hpLimit < 100) {
                 for (let i = 0; i<5; i++) {
-                    titansHP[0][i] = getPointInRange(titansHp5Points[i][0], titansHp5Points[i][1], hpLimit)
+                    titansHP5[i] = getPointInRange(titansHp5Points[i][0], titansHp5Points[i][1], hpLimit)
                     if (i < 4) {
-                        titansHP[1][i] = getPointInRange(titansHp4Points[i][0], titansHp4Points[i][1], hpLimit)
+                        titansHP4[i] = getPointInRange(titansHp4Points[i][0], titansHp4Points[i][1], hpLimit)
                     }
                 }
             }
 
+            let delayAfterCheckHPTitle = "delay after checking titans HP"
+            const delayAfterCheckHP = {actionType: actionDelay, delay: 0, title: delayAfterCheckHPTitle}
+            const skipCheckHP = {actionType: actionJump, jumpTitle: delayAfterCheckHPTitle}
+            let checkHP5 = skipCheckHP
+            let checkHP4 = skipCheckHP
+            const check5TitansHpTitle = "Check 5 titans HP"
+            if (titansHP5[0] > 0) {
+                checkHP5 = {xx: titansHP5, y: 0.461, color: [56,199,28], actionType: actionInterruptIfNotColor, title: check5TitansHpTitle, threshold: 20}
+                checkHP4 = {xx: titansHP4, y: 0.461, color: [56,199,28], actionType: actionInterruptIfNotColor, title: "Check 4 titans HP", threshold: 20}
+            }
+            
+            let checkIf5Titans = {screen: popupBattleResult5Titans, actionType: actionJumpIfScreen, title: "Check if there are 5 titans", threshold: 20, jumpTitle: check5TitansHpTitle}
+
             // ======= dungeon gates =======
-            const waitForGateRight = {x :0.6703741152679474, y:0.11393805309734513, color: [29,37,83], delay: DELAY_CHECK_CYCLE, actionType: actionWaitForColor, title: "waiting for right gate scene"}
+            const waitForGateRight = {screen: screenRightGate, delay: DELAY_CHECK_CYCLE, actionType: actionWaitForScreen, title: "waiting for right gate scene", threshold: 15}
             const gateRight = {x: 0.691268, y: 0.5, delay: DELAY_AFTER_GATE_CLICKED, actionType: actionClick, title: "clicking on right gate"}
 
-            const waitForGateMid = {x: 0.4752275025278059, y: 0.11172566371681415, color: [28,36,81], delay: DELAY_CHECK_CYCLE, actionType: actionWaitForColor, title: "waiting for mid gate scene"}
+            const waitForGateMid = {screen: screenMidGate, delay: DELAY_CHECK_CYCLE, actionType: actionWaitForScreen, title: "waiting for mid gate scene", threshold: 15}
             const gateMid = {x: 0.500, y: 0.5, delay: DELAY_AFTER_GATE_CLICKED, actionType: actionClick, title: "clicking on mid gate"}
 
-            const waitForGateLeft = {x: 0.2901921132457027, y: 0.11172566371681415, color: [28,36,81], delay: DELAY_CHECK_CYCLE, actionType: actionWaitForColor, title: "waiting for left gate scene"}
+            const waitForGateLeft = {screen: screenLeftGate, delay: DELAY_CHECK_CYCLE, actionType: actionWaitForScreen, title: "waiting for left gate scene", threshold: 15}
             const gateLeft = {x: 0.312, y: 0.5, delay: DELAY_AFTER_GATE_CLICKED, actionType: actionClick, title: "clicking on left gate"}
 
             // ======= dungeon elemental rooms =======
             const roomSelectionTitle = "waiting for room selection popup"
-            const waitFor1RoomSelection = {x: 0.69969666, y: 0.8506637, actionType: actionWaitForColor, color: [17,12,6], delay: DELAY_CHECK_CYCLE, title: roomSelectionTitle}
-            const waitFor2RoomSelection = {x: 0.5, y: 0.5, color: [19,17,7], delay: DELAY_CHECK_CYCLE, actionType: actionWaitForColor, title: roomSelectionTitle}
+
+            const waitFor1RoomSelection = {screen: popupOneRoomSelection, actionType: actionWaitForScreen, threshold: 20, delay: DELAY_CHECK_CYCLE, title: roomSelectionTitle}
+            const waitFor2RoomSelection = {screen: popupTwoRoomsSelection, actionType: actionWaitForScreen, threshold: 20, delay: DELAY_CHECK_CYCLE, title: roomSelectionTitle}
             const roomMid = {x: 0.5, y: 0.795, delay: DELAY_AFTER_ROOM_CLICKED, actionType: actionClick, title: "clicking on mid room"}
 
             //  ======= usage: checkRoomColors, roomLeft, roomRight =======
@@ -2445,29 +2545,25 @@
             const roomRight = {x: 0.6833, y: 0.8, delay: DELAY_AFTER_ROOM_CLICKED, actionType: actionClick, title: "clicking on right room"}
             // ======= dungeon battlefield screen =======
 
-            const waitForBattlefield = {x: 0.014553, y: 0.952164, color: [34,46,64], delay: DELAY_CHECK_CYCLE, actionType: actionWaitForColor, title: "waiting for battlefield scene"}
+            const waitForBattlefield = {screen: screenBattlefield, delay: DELAY_CHECK_CYCLE, actionType: actionWaitForScreen, title: "waiting for battlefield scene"}
             const autoBattle = {x: 0.87214, y: 0.758542, delay: DELAY_AFTER_CLICKING_AUTOBATTLE, actionType: actionClick, title: "clicking autobattle"}
 
             // ======= dungeon confirm auto-battle results screen =======
-            const waitForConfirmBattle = {x: 0.60083, y: 0.127563, color: [137,1,0], delay: DELAY_CHECK_CYCLE, actionType: actionWaitForColor, title: "waiting for battle result popup"}
+            const waitForConfirmBattle = {screen: popupBattleResult, delay: DELAY_CHECK_CYCLE, actionType: actionWaitForScreen, title: "waiting for battle result popup"}
 
-            let checkHP = delay(1)
-            if (titansHP[0][0] > 0) {
-                checkHP = {x: 0, xx: titansHP, y: 0.461, color: [56,199,28], actionType: actionInterruptIfNotColor, title: "Check titans HP", threshold: 20}
-            }
-
+            
             const confirmBattle = {x: 0.641372, y: 0.822323, delay: DELAY_FOR_TITANS_WALK, actionType: actionClick, title: "clicking on confirm battle result"}
 
             // ======= dungeon floor finished symbol =======
-            const waitForFloor1Done = {x: 0.3163664839467502, y: 0.1320754716981132, color: [18,21,26], delay: DELAY_CHECK_CYCLE, actionType: actionWaitForColor, title: "waiting for floor1 final scene"}
+            const waitForFloor1Done = {screen: screenFloor1Final, delay: DELAY_CHECK_CYCLE, actionType: actionWaitForScreen, title: "waiting for floor1 final scene"}
             const floor1Done = {x: 0.7297, y: 0.47836, delay: DELAY_AFTER_CLICKING_FLOOR_REWARD, actionType: actionClick, title: "clicking on floor1 final symbol"}
 
-            const waitForFloor2Done = {x: 0.6985121378230227, y: 0.14408233276157806, color: [20,22,28], delay: DELAY_CHECK_CYCLE, actionType: actionWaitForColor, title: "waiting for floor2 final scene"}
+            const waitForFloor2Done = {screen: screenFloor2Final, delay: DELAY_CHECK_CYCLE, actionType: actionWaitForScreen, title: "waiting for floor2 final scene"}
             const floor2Done = {x: 0.27755, y: 0.47836, delay: DELAY_AFTER_CLICKING_FLOOR_REWARD, actionType: actionClick, title: "clicking on floor2 final symbol"}
 
 
             // ======= dungeon floor finished popup ========
-            const waitForFloorConfirm = {x: 0.5, y: 0.5, color: [22,12,8], delay: DELAY_CHECK_CYCLE, actionType: actionWaitForColor, title: "waiting for floor confirmation popup"}
+            const waitForFloorConfirm = {screen: popupFloorReward, delay: DELAY_CHECK_CYCLE, actionType: actionWaitForScreen, title: "waiting for floor confirmation popup"}
             const floorConfirm = {x: 0.635, y: 0.697, delay: DELAY_AFTER_FINISHING_FLOOR, actionType: actionClick, title: "clicking on floor confirmation popup"}
 
 
@@ -2475,23 +2571,25 @@
             const fastRightGateTitle = "Fast right gate"
             let fastRightGateActions = [{x: 0.995370, y: 0.389100, actionType: actionClick, delay: 100}]
             for (let i=0; i<10; i++) {
-                fastRightGateActions.push({x: 0.502315, y: 0.126743, actionType: actionJumpIf, color: [20,17,4], threshold: 15, title: fastRightGateTitle, jumpTitle: roomSelectionTitle})
+                fastRightGateActions.push({screen: popupOneRoomSelection, actionType: actionJumpIfScreen, threshold: 20, title: fastRightGateTitle, jumpTitle: roomSelectionTitle})
+                fastRightGateActions.push({screen: popupTwoRoomsSelection, actionType: actionJumpIfScreen, threshold: 20, title: fastRightGateTitle, jumpTitle: roomSelectionTitle})
                 fastRightGateActions.push({x: 0.995370, y: 0.389100, actionType: actionClick, delay: 100})
             }
 
             const fastLeftGateTitle = "Fast left gate"
             let fastLeftGateActions = [{x: 0.005370, y: 0.389100, actionType: actionClick, delay: 50}]
             for (let i=0; i<10; i++) {
-                fastLeftGateActions.push({x: 0.502315, y: 0.126743, actionType: actionJumpIf, color: [20,17,4], threshold: 15, title: fastLeftGateTitle, jumpTitle: roomSelectionTitle})
+                fastLeftGateActions.push({screen: popupOneRoomSelection, actionType: actionJumpIfScreen, threshold: 20, title: fastLeftGateTitle, jumpTitle: roomSelectionTitle})
+                fastLeftGateActions.push({screen: popupTwoRoomsSelection, actionType: actionJumpIfScreen, threshold: 20, title: fastLeftGateTitle, jumpTitle: roomSelectionTitle})
                 fastLeftGateActions.push({x: 0.005370, y: 0.389100, actionType: actionClick, delay: 50})
             }
 
             // ======== screen detection for the first floor =========
-            const jumpToRightGate = {x :0.6703741152679474, y:0.11393805309734513, color: [29,37,83], delay: DELAY_CHECK_CYCLE, actionType: actionJumpIf, title: gateRight.title}
-            const jumpToMidGate = {x: 0.4752275025278059, y: 0.11172566371681415, color: [28,36,81], delay: DELAY_CHECK_CYCLE, actionType: actionJumpIf, title: gateMid.title}
-            const jumpToLeftGate = {x: 0.2901921132457027, y: 0.11172566371681415, color: [28,36,81], delay: DELAY_CHECK_CYCLE, actionType: actionJumpIf, title: gateLeft.title}
-            const jumpToFloor1 = {x: 0.3163664839467502, y: 0.1320754716981132, color: [18,21,26], delay: DELAY_CHECK_CYCLE, actionType: actionJumpIf, title: floor1Done.title}
-            const jumpToFloor2 = {x: 0.6985121378230227, y: 0.14408233276157806, color: [20,22,28], delay: DELAY_CHECK_CYCLE, actionType: actionJumpIf, title: floor2Done.title}
+            const jumpToRightGate = {screen: screenPastRightGate, delay: DELAY_CHECK_CYCLE, actionType: actionJumpIfScreen, title: gateRight.title}
+            const jumpToMidGate = {screen: screenPastMidGate, delay: DELAY_CHECK_CYCLE, actionType: actionJumpIfScreen, title: gateMid.title}
+            const jumpToLeftGate = {screen: screenPastLeftGate, delay: DELAY_CHECK_CYCLE, actionType: actionJumpIfScreen, title: gateLeft.title}
+            const jumpToFloor1 = {screen: screenFloor1Final, delay: DELAY_CHECK_CYCLE, actionType: actionJumpIfScreen, title: floor1Done.title}
+            const jumpToFloor2 = {screen: screenFloor2Final, delay: DELAY_CHECK_CYCLE, actionType: actionJumpIfScreen, title: floor2Done.title}
 
 
             if (fromHomePage) {
@@ -2501,30 +2599,33 @@
                 const waitForHomeTitle = "Waiting for home screen"
                 const clickOnGuildTitle = "Click on guild"
 
-                const checkHomePopup = {x: 0.971644, y: 0.054499, actionType: actionJumpIfNot, color: [245,209,117], title: waitForHomeTitle}
+                const checkHomePopup = {screen: screenHomePopup, actionType: actionJumpIfNotScreen, title: "Checking if there is a popup", jumpTitle: waitForHomeTitle}
                 const closeHomePopup = {x: 0.971644, y: 0.054499, actionType: actionClick, title: "closing popup", delay: 1000}
 
                 await runActions([
-                    {x: 0.334182, y: 0.907063, actionType: actionWaitForColor, color: [235,236,198], delay: 30000, title: waitForHomeTitle},
-                    {x: 0.334182, y: 0.907063, actionType: actionJumpIf, color: [235,236,198], delay: 5000, title: waitForHomeTitle, jumpTitle: clickOnGuildTitle},
+                    {screen: screenHomeScreen, actionType: actionJumpIfScreen, title: waitForHomeTitle, jumpTitle: clickOnGuildTitle},
                     checkHomePopup,
                     closeHomePopup,
                     checkHomePopup,
                     closeHomePopup,
-                    {x: 0.334182, y: 0.907063, actionType: actionWaitForColor, color: [235,236,198], delay: 30000, title: waitForHomeTitle},
+                    {screen: screenHomeScreen, actionType: actionWaitForScreen, delay: 30000, title: waitForHomeTitle, threshold: 20},
                     {actionType: actionDelay, delay: 2000, title: clickOnGuildTitle}
                 ], MACRO_DUNGEON, 0)
 
                 await runActions([
-                    {x: 0.332755, y: 0.910013, actionType: actionClick, title: clickOnGuildTitle},
-                    {x: 0.273832, y: 0.612474, actionType: actionWaitForColor, color:[72,39,0], delay: DELAY_AFTER_CLICKING_GUILD, title: "Waiting for guild screen"},
+                    {x: 0.594329, y: 0.908112, actionType: actionClick, title: clickOnGuildTitle},
+                    {screen: screenGuildScreen, actionType: actionWaitForScreen, delay: DELAY_AFTER_CLICKING_GUILD, title: "Waiting for guild screen"},
                     delay(2000),
                     {x: 0.241220, y: 0.480769, actionType: actionClick, delay: DELAY_AFTER_CLICKING_DUNGEON, title: "click on dungeon"}
                 ], MACRO_DUNGEON, 2)
             }
 
             const confirmBattleDelay = {actionType: actionDelay, delay: EXTRA_DELAY_BEFORE_CONFIRM_BATTLE, title: "Waiting for confirm battle"}
-            const battleActions = [waitForBattlefield, autoBattle, waitForConfirmBattle, checkHP, confirmBattleDelay, confirmBattle]
+            const battleActions = [
+                waitForBattlefield, autoBattle, waitForConfirmBattle, 
+                checkIf5Titans, checkHP4, skipCheckHP, checkHP5, delayAfterCheckHP, 
+                confirmBattleDelay, confirmBattle
+            ]
             const initialFloorRooms = [checkRoomColors, roomLeft, roomRight, roomMid]
 
             await runActions([
@@ -2602,7 +2703,7 @@
                 isRunningMacro = null
                 return
             }
-            localStorage.setItem("last_macro", MACRO_FRONTIER)
+            localStorage.setItem(LAST_MACRO_KEY, MACRO_FRONTIER)
             setActivated(dailyButton, true, BUTTON_TEXT_STOP_MACRO + MACRO_FRONTIER, BUTTON_TEXT_RUN_CUSTOM)
             isRunningMacro = MACRO_FRONTIER
             startMacroSession(isResume)
@@ -2636,44 +2737,42 @@
                 return {x: 0.5, y: y, altX: 0.5, altY: yTeam1, delay: 100, actionType: actionDragDrop, title: "scroll +4 teams"}
             }
             const leaveFrontierLabel = "Leave Frontier"
-            const waitForFrontier = {x: 0.049190, y: 0.434094, actionType: actionWaitForColor, color: [237,209,158], delay: 5000, title: "waiting for frontier"}
+            const waitForFrontier = {screen: screenFrontier, actionType: actionWaitForScreen, delay: 5000, title: "waiting for frontier"}
             const clickToBattle = {x: 0.909604, y: 0.888660, delay: 200, actionType: actionClick, title: "click to battle"}
-            const waitForBattlePreparation = {x: 0.841435, y: 0.766195, actionType: actionWaitForColor, color: [65,158,28], delay: 5000, title: "waiting for battle prep."}
+            const waitForBattlePreparation = {screen: screenBattlePrep, actionType: actionWaitForScreen, delay: 5000, title: "waiting for battle prep."}
             const clickAutoBattle = {x: 0.893596, y: 0.760824, delay: 200, actionType: actionClick, title: "click auto battle"}
-            const waitForLose = {x: 0.497106, y: 0.251584, actionType: actionWaitForColor, color: [180,14,36], delay: 60000, title: "waiting for lose"}
+            const waitForLose = {screen: screenLose, actionType: actionWaitForScreen, delay: 60000, title: "waiting for lose"}
             const clickContinue = {x: 0.903013, y: 0.890721, delay: 200, actionType: actionClick, title: "click continue"}
 
             const clickReorderTeams = {x: 0.782407, y: 0.719899, actionType: actionClick, delay: 300, title: "click reorder teams"}
-            const waitForReorderTeams = {x: 0.499421, y: 0.004436, actionType: actionWaitForColor, color: [3,6,9], delay: 2000, title: "waiting for reorder teams"}
+            const waitForReorderTeams = {screen: screenReorderTeams, actionType: actionWaitForScreen, delay: 2000, title: "waiting for reorder teams"}
             const clickCloseReorderTeams = {x: 0.971644, y: 0.052598, actionType: actionClick, delay: 300, title: "close reorder teams"}
 
             const battleLoop = [waitForBattlePreparation, delay(500), clickAutoBattle, waitForLose, delay(500), clickContinue, waitForFrontier, delay(500), clickToBattle]
-
+            const clickFrontierTitle = "Click frontier"
             if (fromHomePage) {
                 fromHomePage = false
 
                 // ========== initial game screen =============
                 const waitForHomeTitle = "Waiting for home screen"
-                const clickOnGuildTitle = "Click on guild"
 
-                const checkHomePopup = {x: 0.971644, y: 0.054499, actionType: actionJumpIfNot, color: [245,209,117], title: waitForHomeTitle}
+                const checkHomePopup = {screen: screenHomePopup, actionType: actionJumpIfNotScreen, title: waitForHomeTitle}
                 const closeHomePopup = {x: 0.971644, y: 0.054499, actionType: actionClick, title: "closing popup", delay: 1000}
 
                 await runActions([
-                    {x: 0.334182, y: 0.907063, actionType: actionWaitForColor, color: [235,236,198], delay: 30000, title: waitForHomeTitle},
-                    {x: 0.334182, y: 0.907063, actionType: actionJumpIf, color: [235,236,198], delay: 5000, title: waitForHomeTitle, jumpTitle: clickOnGuildTitle},
+                    {screen: screenHomeScreen, actionType: actionJumpIfScreen, title: waitForHomeTitle, jumpTitle: clickFrontierTitle},
                     checkHomePopup,
                     closeHomePopup,
                     checkHomePopup,
                     closeHomePopup,
-                    {x: 0.334182, y: 0.907063, actionType: actionWaitForColor, color: [235,236,198], delay: 30000, title: waitForHomeTitle},
+                    {screen: screenHomeScreen, actionType: actionWaitForScreen, delay: 30000, title: waitForHomeTitle},
                     delay(2000),
-                ], MACRO_DUNGEON, 0)
+                ], MACRO_FRONTIER, 0)
             }
 
             await runActions([
                 {actionType: actionTitle, title: "Frontier"},
-                {x: 0.464120, y: 0.239544, actionType: actionClick, delay: 500, title: "Click frontier"},
+                {x: 0.464120, y: 0.239544, actionType: actionClick, delay: 500, title: clickFrontierTitle},
                 waitForFrontier, delay(500), clickToBattle
             ], MACRO_FRONTIER)
 
@@ -2737,7 +2836,7 @@
             function clickAndStartExpAction(x, y) {
                 return [
                     {x: x, y: y, delay: 0, actionType: actionClick, title: clickTitle},
-                    {x: 0.721644, y: 0.143219, color:[24,12,8], actionType: actionJumpIfNot, title: clickTitle},
+                    {screen: screenExpeditionOpened, actionType: actionJumpIfNotScreen, title: clickTitle},
                     {x: 0.587384, y: 0.774398, delay: 500, actionType: actionClick, title: "click start"},
                     {x: 0.795718, y: 0.888466, delay: 500, actionType: actionClick, title: "click auto heroes"},
                     {x: 0.795718, y: 0.888466, delay: 500, actionType: actionClick, title: "click start with these hereos"},
@@ -2750,7 +2849,7 @@
                 {actionType: actionTitle, title: "Expeditions"},
                 {x: 0.29456, y: 0.309252, delay: 1000, actionType: actionClick, title: "Navigate airship"},
                 {x: 0.498264, y: 0.263625, delay: 1000, actionType: actionClick, title: "Click valkyrie"},
-                {x: 0.659722, y: 0.903676, delay: 100, color: [73,158,22], actionType: actionJumpIf, title: closeValkyrieTitle},
+                {screen: screenValkyrieGift, delay: 100, actionType: actionJumpIfScreen, title: closeValkyrieTitle},
                 {x: 0.502315, y: 0.745247, delay: 1000, actionType: actionClick, title: "Click valkyrie's gift"},
                 {x: 0.969907, y: 0.060837, delay: 1000, actionType: actionClick, title: closeValkyrieTitle},
                 {x: 0.501736, y: 0.667934, delay: 1000, actionType: actionClick, title: "Navigate expeditions"}
@@ -2776,9 +2875,9 @@
             let actions = [
                 {actionType: actionTitle, title: "Tower"},
                 {x: 0.683449, y: 0.309886, actionType: actionClick, delay: 1000, title: "Open tower"},
-                {x: 0.638889, y: 0.731939, actionType: actionJumpIfNot, color: [69, 166, 31], title: leaveTowerTitle, threshold: 20},
+                {screen: screenTowerChestAvailable, actionType: actionJumpIfNotScreen, title: leaveTowerTitle, threshold: 20},
                 {x: 0.638889, y: 0.731939, actionType: actionClick, delay: 1000, title: "Open 33 chests for 2k emeralds"},
-                {x: 0.711806, y: 0.900507, actionType: actionWaitForColor, color: [68,165,30], delay: 10000, threshold: 20},
+                {screen: screenTowerRewardPopup, actionType: actionWaitForScreen, delay: 10000, threshold: 20},
                 {x: 0.971065, y: 0.050063, actionType: actionClick, delay: 1000, title: leaveTowerTitle}
             ]
             await runActions(actions, macro, 0)
@@ -2792,11 +2891,11 @@
                 {x: 0.553241, y: 0.240177, actionType: actionClick, delay: 2000, title: "Click elemental cradle"},
                 {x: 0.771991, y: 0.366920, actionType: actionClick, delay: 2000, title: "Click castle ruins"},
                 {x: 0.976273, y: 0.500000, actionType: actionClick, delay: 2000, title: "Scroll to fairies"},
-                {x: 0.823495, y: 0.067807, actionType: actionJumpIf, color: [30,15,20], title: closeHydraTitle},
+                {screen: screenHydraNoMoreFairies, actionType: actionJumpIfScreen, title: closeHydraTitle},
                 {x: 0.748843, y: 0.844740, actionType: actionClick, delay: 500, title: "Give horn to fairies"},
-                {x: 0.823495, y: 0.067807, actionType: actionJumpIf, color: [30,15,20], title: closeHydraTitle},
+                {screen: screenHydraNoMoreFairies, actionType: actionJumpIfScreen, title: closeHydraTitle},
                 {x: 0.748843, y: 0.844740, actionType: actionClick, delay: 500, title: "Give horn to fairies"},
-                {x: 0.823495, y: 0.067807, actionType: actionJumpIf, color: [30,15,20], title: closeHydraTitle},
+                {screen: screenHydraNoMoreFairies, actionType: actionJumpIfScreen, title: closeHydraTitle},
                 {x: 0.748843, y: 0.844740, actionType: actionClick, delay: 500, title: "Give horn to fairies"},
                 {x: 0.970486, y: 0.061470, actionType: actionClick, delay: 1000, title: closeHydraTitle},
                 {x: 0.970486, y: 0.061470, actionType: actionClick, delay: 1000, title: "Close elemental cradle"},
@@ -2818,17 +2917,17 @@
                 {x: 0.877894, y: 0.753485, actionType: actionClick, delay: 1000, title: "Search icon"},
                 {x: 0.768519, y: 0.207858, actionType: actionClick, delay: 1000, title: "Camps icon"},
                 {x: 0.853588, y: 0.903676, actionType: actionClick, delay: 1000, title: "Search camp"},
-                {x: 0.659722, y: 0.493663, actionType: actionWaitForColor, delay: 5000, color: [255,253,239], title: "waiting for camp"},
+                {screen: screenCampAttackButton, actionType: actionWaitForScreen, delay: 5000, title: "waiting for camp"},
 
-                {x: 0.659722, y: 0.493663, actionType: actionJumpIfNot, color: [255,253,239], title: titleAttackCampBut}, // check if there is white Attack button with swords
+                {screen: screenCampAttackButton, actionType: actionJumpIfNotScreen, title: titleAttackCampBut}, // check if there is white Attack button with swords
                 {x: 0.657986, y: 0.490494, actionType: actionClick, delay: 1000, title: titleAttackCamp},
-                {x: 0.500000, y: 0.500000, actionType: actionJumpIfNot, color: [0,0,0], title: titleStartBattle, treshold: 1},
+                {screen: screenCampBattleTransition, actionType: actionJumpIfNotScreen, title: titleStartBattle, treshold: 1},
 
-                {x: 0.460648, y: 0.756654, actionType: actionJumpIfNot, color: [56,146,0], title: titleLeaveRealm}, // check if there is green Attack button in popup
+                {screen: screenCampPopupAttackButton, actionType: actionJumpIfNotScreen, title: titleLeaveRealm}, // check if there is green Attack button in popup
                 {x: 0.460648, y: 0.756654, actionType: actionClick, delay: 1000, title: titleAttackCamp},
 
                 {x: 0.886574, y: 0.894804, actionType: actionClick, delay: 5000, title: titleStartBattle},
-                {x: 0.860532, y: 0.867554, actionType: actionWaitForColor, delay: 60000, color: [92,192,35], title: "Waiting until battle ends...", threshold: 30},
+                {screen: screenCampBattleEnd, actionType: actionWaitForScreen, delay: 60000, title: "Waiting until battle ends...", threshold: 30},
                 {actionType: actionDelay, delay: 500},
                 {x: 0.914931, y: 0.893536, actionType: actionClick, delay: 5000, title: "confirm battle"}
             ]
@@ -2843,7 +2942,7 @@
             }
 
             const leaveRealm = [
-                {x: 0.854167, y: 0.527883, actionType: actionJumpIfNot, color: [36,48,67], title: titleLeaveRealm},
+                {screen: screenCampSearchClosed, actionType: actionJumpIfNotScreen, title: titleLeaveRealm},
                 {x: 0.969907, y: 0.051331, actionType: actionClick, delay: 2000, title: "close search"},
                 {x: 0.046296, y: 0.897972, actionType: actionClick, delay: 2000, title: titleLeaveRealm}
             ]
@@ -2858,20 +2957,20 @@
             // heroic chests
             await runActions([
                 {actionType: actionTitle, title: "Chest"},
-                //{x: 0.523148, y: 0.797845, actionType: actionJumpIfNot, color: [196,41,42], title: gotoNextActionTitle},
+                //{x: 0.523148, y: 0.797845, actionType: actionJumpIfNotScreen, color: [196,41,42], title: gotoNextActionTitle},
                 {x: 0.480324, y: 0.711027, actionType: actionClick, delay: 1000, title: "Navigate heroic chest"},
 
                 // chest for ad
                 {x: 0.730000, y: 0.690000, actionType: actionClick, delay: 2000, title: "Open chest for AD"},
                 {x: 0.730000, y: 0.690000, actionType: actionClick, delay: 2000, title: "Skip chest animation"},
-                {x: 0.381366, y: 0.050697, actionType: actionJumpIfNot, color:[255,250,187], title: gotoNextChestTitle},
+                {screen: screenChestRewardPopup, actionType: actionJumpIfNotScreen, title: gotoNextChestTitle},
                 {x: 0.968750, y: 0.054499, actionType: actionClick, delay: 1000, title: "Close chest"},
 
                 {delay: 100, actionType: actionDelay, title: gotoNextChestTitle},
-                {x: 0.409144, y: 0.857414, actionType: actionJumpIf, color: [169,255,190], title: gotoNextChestTitle, threshold: 30}, // check if chest is free
+                {screen: screenFreeChestAvailable, actionType: actionJumpIfScreen, title: gotoNextChestTitle, threshold: 30}, // check if chest is free
                 {x: 0.380000, y: 0.860000, actionType: actionClick, delay: 2000, title: "Open free chest"},
                 {x: 0.730000, y: 0.690000, actionType: actionClick, delay: 2000, title: "Skip chest animation"},
-                {x: 0.381366, y: 0.050697, actionType: actionJumpIfNot, color:[255,250,187], title: gotoNextChestTitle},
+                {screen: screenChestRewardPopup, actionType: actionJumpIfNotScreen, title: gotoNextChestTitle},
                 {x: 0.968750, y: 0.054499, actionType: actionClick, delay: 1000, title: "Close chest"},
 
                 {delay: 100, actionType: actionDelay, title: gotoNextChestTitle},
@@ -2956,11 +3055,11 @@
 
         await startTelegramControl()
 
-        if (localStorage.getItem("last_macro") == MACRO_FRONTIER) {
+        if (localStorage.getItem(LAST_MACRO_KEY) == MACRO_FRONTIER) {
             const groups = parseFrontierGroups(localStorage.getItem(FRONTIER_GROUPS_STORAGE_KEY)) || []
             fromHomePage = true
             await runFrontier(groups, Number(localStorage.getItem(FRONTIER_ATTEMPTS_STORAGE_KEY) || 3), Number(localStorage.getItem(FRONTIER_TEAMS_STORAGE_KEY) || 10), true)
-        } else if (localStorage.getItem("last_macro") == MACRO_DUNGEON) {
+        } else if (localStorage.getItem(LAST_MACRO_KEY) == MACRO_DUNGEON) {
             fromHomePage = true
             await runDungeonMacro(true)
         }
